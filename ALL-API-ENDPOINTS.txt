@@ -1,0 +1,1251 @@
+================================================================================
+WP REST BRIDGE PLUGIN - COMPLETE API ENDPOINTS DOCUMENTATION
+================================================================================
+
+Base URL: http://localhost/wooautopublix/wp-json/restbridge/v1
+
+================================================================================
+WORDPRESS CORE API ENDPOINTS
+================================================================================
+
+--------------------------------------------------------------------------------
+1. POSTS API
+--------------------------------------------------------------------------------
+
+GET    /posts
+       Parameters:
+       - per_page (integer, optional): Number of posts per page (default: 10)
+       - page (integer, optional): Page number (default: 1)
+       - search (string, optional): Search term
+       - category (integer, optional): Category ID
+       - orderby (string, optional): Order by field (date, title, etc.)
+       - order (string, optional): ASC or DESC (default: DESC)
+       - status (string, optional): Post status (default: publish)
+
+GET    /posts/{id}
+       Parameters: None
+
+POST   /posts (requires auth)
+       Body Parameters:
+       - title (string, required): Post title
+       - content (string, required): Post content
+       - status (string, optional): Post status (default: draft)
+
+PUT    /posts/{id} (requires auth)
+       Body Parameters:
+       - title (string, optional): Post title
+       - content (string, optional): Post content
+       - status (string, optional): Post status
+
+DELETE /posts/{id} (requires auth)
+       Parameters:
+       - force (boolean, optional): Force delete (default: false)
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/posts
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/posts?per_page=10&page=1
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/posts/123
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/posts
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/posts/123
+DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/posts/123
+
+--------------------------------------------------------------------------------
+2. PAGES API
+--------------------------------------------------------------------------------
+
+GET    /pages
+       Parameters:
+       - per_page (integer, optional): Number of pages per page (default: 10)
+       - page (integer, optional): Page number (default: 1)
+       - search (string, optional): Search term
+       - parent (integer, optional): Parent page ID
+       - orderby (string, optional): Order by field (default: menu_order)
+       - order (string, optional): ASC or DESC (default: ASC)
+       - status (string, optional): Page status (default: publish)
+
+GET    /pages/{id}
+       Parameters: None
+
+POST   /pages (requires auth)
+       Body Parameters:
+       - title (string, required): Page title
+       - content (string, required): Page content
+       - status (string, optional): Page status (default: draft)
+       - parent (integer, optional): Parent page ID
+
+PUT    /pages/{id} (requires auth)
+       Body Parameters:
+       - title (string, optional): Page title
+       - content (string, optional): Page content
+       - status (string, optional): Page status
+       - parent (integer, optional): Parent page ID
+
+DELETE /pages/{id} (requires auth)
+       Parameters:
+       - force (boolean, optional): Force delete (default: false)
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/pages
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/pages/123
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/pages
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/pages/123
+DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/pages/123
+
+--------------------------------------------------------------------------------
+3. COMMENTS API
+--------------------------------------------------------------------------------
+
+GET    /comments
+       Parameters:
+       - per_page (integer, optional): Number of comments (default: 10)
+       - page (integer, optional): Page number (default: 1)
+       - post (integer, optional): Post ID
+       - parent (integer, optional): Parent comment ID
+       - status (string, optional): Comment status (default: approve)
+       - orderby (string, optional): Order by field (default: comment_date)
+       - order (string, optional): ASC or DESC (default: DESC)
+
+GET    /comments/{id}
+       Parameters: None
+
+POST   /comments (public)
+       Body Parameters:
+       - post_id (integer, required): Post ID
+       - author (string, required): Comment author name
+       - author_email (string, required): Author email
+       - content (string, required): Comment content
+       - parent (integer, optional): Parent comment ID
+       - approved (integer, optional): Approved status (0 or 1)
+
+PUT    /comments/{id} (requires auth)
+       Body Parameters:
+       - content (string, optional): Comment content
+       - approved (integer, optional): Approved status (0 or 1)
+
+DELETE /comments/{id} (requires auth)
+       Parameters:
+       - force (boolean, optional): Force delete (default: false)
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/comments
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/comments?post=123
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/comments/789
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/comments
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/comments/789
+DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/comments/789
+
+--------------------------------------------------------------------------------
+4. CATEGORIES API
+--------------------------------------------------------------------------------
+
+GET    /categories
+       Parameters:
+       - hide_empty (boolean, optional): Hide empty categories (default: false)
+       - orderby (string, optional): Order by field (default: name)
+       - order (string, optional): ASC or DESC (default: ASC)
+       - parent (integer, optional): Parent category ID
+       - search (string, optional): Search term
+
+GET    /categories/{id}
+       Parameters: None
+
+POST   /categories (requires auth)
+       Body Parameters:
+       - name (string, required): Category name
+       - description (string, optional): Category description
+       - parent (integer, optional): Parent category ID
+       - slug (string, optional): Category slug
+
+PUT    /categories/{id} (requires auth)
+       Body Parameters:
+       - name (string, optional): Category name
+       - description (string, optional): Category description
+       - parent (integer, optional): Parent category ID
+       - slug (string, optional): Category slug
+
+DELETE /categories/{id} (requires auth)
+       Parameters:
+       - force (boolean, optional): Force delete (default: false)
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/categories
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/categories/1
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/categories
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/categories/1
+DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/categories/1
+
+--------------------------------------------------------------------------------
+5. TAGS API
+--------------------------------------------------------------------------------
+
+GET    /tags
+       Parameters:
+       - hide_empty (boolean, optional): Hide empty tags (default: false)
+       - orderby (string, optional): Order by field (default: name)
+       - order (string, optional): ASC or DESC (default: ASC)
+       - search (string, optional): Search term
+
+GET    /tags/{id}
+       Parameters: None
+
+POST   /tags (requires auth)
+       Body Parameters:
+       - name (string, required): Tag name
+       - description (string, optional): Tag description
+       - slug (string, optional): Tag slug
+
+PUT    /tags/{id} (requires auth)
+       Body Parameters:
+       - name (string, optional): Tag name
+       - description (string, optional): Tag description
+       - slug (string, optional): Tag slug
+
+DELETE /tags/{id} (requires auth)
+       Parameters: None
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/tags
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/tags/5
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/tags
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/tags/5
+DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/tags/5
+
+--------------------------------------------------------------------------------
+6. USERS API
+--------------------------------------------------------------------------------
+
+GET    /users (requires auth)
+       Parameters:
+       - per_page (integer, optional): Number of users (default: 10)
+       - page (integer, optional): Page number (default: 1)
+       - search (string, optional): Search term
+       - role (string, optional): User role
+       - orderby (string, optional): Order by field (default: registered)
+       - order (string, optional): ASC or DESC (default: DESC)
+
+GET    /users/{id} (requires auth)
+       Parameters: None
+
+GET    /users/me (public if logged in)
+       Parameters: None
+
+POST   /users (requires auth)
+       Body Parameters:
+       - username (string, required): Username
+       - email (string, required): User email
+       - password (string, optional): Password (auto-generated if not provided)
+       - role (string, optional): User role (default: subscriber)
+       - display_name (string, optional): Display name
+       - first_name (string, optional): First name
+       - last_name (string, optional): Last name
+
+PUT    /users/{id} (requires auth)
+       Body Parameters:
+       - email (string, optional): User email
+       - password (string, optional): New password
+       - role (string, optional): User role
+       - display_name (string, optional): Display name
+       - first_name (string, optional): First name
+       - last_name (string, optional): Last name
+
+DELETE /users/{id} (requires auth)
+       Parameters:
+       - reassign (integer, optional): User ID to reassign posts to
+
+POST   /login (public)
+       Body Parameters:
+       - username (string, required): Username
+       - password (string, required): Password
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/users
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/users/1
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/users/me
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/users
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/users/1
+DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/users/1
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/login
+
+--------------------------------------------------------------------------------
+7. MEDIA API
+--------------------------------------------------------------------------------
+
+GET    /media
+       Parameters:
+       - per_page (integer, optional): Number of media items (default: 10)
+       - page (integer, optional): Page number (default: 1)
+       - mime_type (string, optional): MIME type filter (e.g., image/jpeg)
+       - author (integer, optional): Author ID
+       - orderby (string, optional): Order by field (default: date)
+       - order (string, optional): ASC or DESC (default: DESC)
+
+GET    /media/{id}
+       Parameters: None
+
+POST   /media (requires auth, multipart/form-data)
+       Form Parameters:
+       - file (file, required): File to upload
+       - title (string, optional): Media title
+       - description (string, optional): Media description
+
+PUT    /media/{id} (requires auth)
+       Body Parameters:
+       - title (string, optional): Media title
+       - description (string, optional): Media description
+
+DELETE /media/{id} (requires auth)
+       Parameters:
+       - force (boolean, optional): Force delete (default: false)
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/media
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/media/234
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/media (multipart/form-data)
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/media/234
+DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/media/234
+
+--------------------------------------------------------------------------------
+8. TAXONOMIES API
+--------------------------------------------------------------------------------
+
+GET    /taxonomies
+       Parameters:
+       - post_type (string, optional): Filter by post type
+
+GET    /taxonomies/{taxonomy_name}
+       Parameters: None
+
+GET    /taxonomies/{taxonomy_name}/terms
+       Parameters:
+       - hide_empty (boolean, optional): Hide empty terms (default: false)
+       - orderby (string, optional): Order by field (default: name)
+       - order (string, optional): ASC or DESC (default: ASC)
+       - parent (integer, optional): Parent term ID
+       - search (string, optional): Search term
+
+GET    /taxonomies/{taxonomy_name}/terms/{id}
+       Parameters: None
+
+POST   /taxonomies/{taxonomy_name}/terms (requires auth)
+       Body Parameters:
+       - name (string, required): Term name
+       - description (string, optional): Term description
+       - slug (string, optional): Term slug
+       - parent (integer, optional): Parent term ID
+
+PUT    /taxonomies/{taxonomy_name}/terms/{id} (requires auth)
+       Body Parameters:
+       - name (string, optional): Term name
+       - description (string, optional): Term description
+       - slug (string, optional): Term slug
+       - parent (integer, optional): Parent term ID
+
+DELETE /taxonomies/{taxonomy_name}/terms/{id} (requires auth)
+       Parameters: None
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/taxonomies
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/taxonomies/category
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/taxonomies/category/terms
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/taxonomies/category/terms/1
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/taxonomies/category/terms
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/taxonomies/category/terms/1
+DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/taxonomies/category/terms/1
+
+--------------------------------------------------------------------------------
+9. MENUS API
+--------------------------------------------------------------------------------
+
+GET    /menus
+       Parameters: None
+
+GET    /menus/{id}
+       Parameters: None
+
+GET    /menus/locations
+       Parameters: None
+
+GET    /menus/locations/{location}
+       Parameters: None
+
+GET    /menus/pages
+       Parameters: None
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/menus
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/menus/123
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/menus/locations
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/menus/locations/primary
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/menus/pages
+
+--------------------------------------------------------------------------------
+10. CUSTOM POST TYPES API (Dynamic)
+--------------------------------------------------------------------------------
+
+GET    /{post_type_name}
+       Parameters:
+       - per_page (integer, optional): Number of items (default: 10)
+       - page (integer, optional): Page number (default: 1)
+       - search (string, optional): Search term
+       - status (string, optional): Post status (default: publish)
+       - orderby (string, optional): Order by field (default: date)
+       - order (string, optional): ASC or DESC (default: DESC)
+
+GET    /{post_type_name}/{id}
+       Parameters: None
+
+POST   /{post_type_name} (requires auth)
+       Body Parameters:
+       - title (string, required): Post title
+       - content (string, required): Post content
+       - status (string, optional): Post status (default: draft)
+
+PUT    /{post_type_name}/{id} (requires auth)
+       Body Parameters:
+       - title (string, optional): Post title
+       - content (string, optional): Post content
+       - status (string, optional): Post status
+
+DELETE /{post_type_name}/{id} (requires auth)
+       Parameters:
+       - force (boolean, optional): Force delete (default: false)
+
+Test URLs (example with custom post type 'event'):
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/event
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/event/123
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/event
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/event/123
+DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/event/123
+
+================================================================================
+WOOCOMMERCE API ENDPOINTS
+================================================================================
+
+--------------------------------------------------------------------------------
+1. PRODUCTS API
+--------------------------------------------------------------------------------
+
+GET    /products
+       Parameters:
+       - per_page (integer, optional): Number of products (default: 10)
+       - page (integer, optional): Page number (default: 1)
+       - search (string, optional): Search term
+       - category (string, optional): Product category slug
+       - status (string, optional): Product status (default: publish)
+       - orderby (string, optional): Order by field (default: date)
+       - order (string, optional): ASC or DESC (default: DESC)
+
+GET    /products/{id}
+       Parameters: None
+
+POST   /products (requires auth)
+       Body Parameters:
+       - name (string, required): Product name
+       - description (string, optional): Product description
+       - short_description (string, optional): Short description
+       - price (float, optional): Product price
+       - status (string, optional): Product status (default: draft)
+
+PUT    /products/{id} (requires auth)
+       Body Parameters:
+       - name (string, optional): Product name
+       - description (string, optional): Product description
+       - short_description (string, optional): Short description
+       - price (float, optional): Product price
+       - status (string, optional): Product status
+
+DELETE /products/{id} (requires auth)
+       Parameters:
+       - force (boolean, optional): Force delete (default: false)
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/products
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/products?per_page=10&category=electronics
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/products/123
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/products
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/products/123
+DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/products/123
+
+--------------------------------------------------------------------------------
+2. CART API
+--------------------------------------------------------------------------------
+
+GET    /cart
+       Parameters: None
+
+POST   /cart/add
+       Body Parameters:
+       - product_id (integer, required): Product ID
+       - quantity (integer, optional): Quantity (default: 1)
+       - variation_id (integer, optional): Variation ID (for variable products)
+       - variation (object, optional): Variation attributes (e.g., {"color": "red", "size": "large"})
+
+PUT    /cart/update
+       Body Parameters:
+       - key (string, optional): Cart item key OR
+       - product_id (integer, optional): Product ID
+       - quantity (integer, required): New quantity (0 removes item)
+
+POST   /cart/remove
+       Body Parameters:
+       - key (string, optional): Cart item key OR
+       - product_id (integer, optional): Product ID
+
+POST   /cart/clear
+       Parameters: None
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/cart
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/cart/add
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/cart/update
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/cart/remove
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/cart/clear
+
+Example Request Bodies:
+POST /cart/add:
+{
+  "product_id": 123,
+  "quantity": 2,
+  "variation_id": 456,
+  "variation": {
+    "color": "red",
+    "size": "large"
+  }
+}
+
+PUT /cart/update:
+{
+  "product_id": 123,
+  "quantity": 5
+}
+OR
+{
+  "key": "cart_item_key",
+  "quantity": 3
+}
+
+POST /cart/remove:
+{
+  "product_id": 123
+}
+OR
+{
+  "key": "cart_item_key"
+}
+
+--------------------------------------------------------------------------------
+3. COUPONS API
+--------------------------------------------------------------------------------
+
+GET    /coupons
+       Parameters:
+       - per_page (integer, optional): Number of coupons (default: 10)
+       - page (integer, optional): Page number (default: 1)
+       - search (string, optional): Search term
+       - status (string, optional): Coupon status (default: publish)
+       - orderby (string, optional): Order by field (default: date)
+       - order (string, optional): ASC or DESC (default: DESC)
+
+GET    /coupons/{id}
+       Parameters: None
+
+POST   /coupons (requires auth)
+       Body Parameters:
+       - code (string, required): Coupon code
+       - discount_type (string, optional): Discount type (percent, fixed_cart, fixed_product)
+       - amount (float, optional): Discount amount
+       - description (string, optional): Coupon description
+       - individual_use (boolean, optional): Individual use only
+       - usage_limit (integer, optional): Usage limit
+       - usage_limit_per_user (integer, optional): Usage limit per user
+       - expiry_date (string, optional): Expiry date (YYYY-MM-DD)
+       - minimum_amount (float, optional): Minimum order amount
+       - maximum_amount (float, optional): Maximum order amount
+       - free_shipping (boolean, optional): Free shipping
+       - exclude_sale_items (boolean, optional): Exclude sale items
+       - product_ids (array, optional): Product IDs array
+       - excluded_product_ids (array, optional): Excluded product IDs array
+       - product_categories (array, optional): Product category IDs array
+       - excluded_product_categories (array, optional): Excluded category IDs array
+
+PUT    /coupons/{id} (requires auth)
+       Body Parameters: (same as POST, all optional)
+
+DELETE /coupons/{id} (requires auth)
+       Parameters:
+       - force (boolean, optional): Force delete (default: false)
+
+POST   /coupons/validate
+       Body Parameters:
+       - code (string, required): Coupon code to validate
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/coupons
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/coupons/123
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/coupons
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/coupons/123
+DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/coupons/123
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/coupons/validate
+
+Example Request Body (POST /coupons):
+{
+  "code": "SAVE10",
+  "discount_type": "percent",
+  "amount": 10,
+  "description": "10% off",
+  "usage_limit": 100,
+  "expiry_date": "2024-12-31",
+  "minimum_amount": 50
+}
+
+--------------------------------------------------------------------------------
+4. CUSTOMERS API
+--------------------------------------------------------------------------------
+
+GET    /customers (requires auth)
+       Parameters:
+       - per_page (integer, optional): Number of customers (default: 10)
+       - page (integer, optional): Page number (default: 1)
+       - search (string, optional): Search term
+       - role (string, optional): User role (default: customer)
+       - orderby (string, optional): Order by field (default: registered)
+       - order (string, optional): ASC or DESC (default: DESC)
+
+GET    /customers/{id} (requires auth)
+       Parameters: None
+
+POST   /customers (public - for registration)
+       Body Parameters:
+       - email (string, required): Customer email
+       - username (string, optional): Username
+       - password (string, optional): Password
+       - first_name (string, optional): First name
+       - last_name (string, optional): Last name
+       - billing_first_name (string, optional): Billing first name
+       - billing_last_name (string, optional): Billing last name
+       - billing_company (string, optional): Billing company
+       - billing_address_1 (string, optional): Billing address line 1
+       - billing_address_2 (string, optional): Billing address line 2
+       - billing_city (string, optional): Billing city
+       - billing_state (string, optional): Billing state
+       - billing_postcode (string, optional): Billing postcode
+       - billing_country (string, optional): Billing country
+       - billing_email (string, optional): Billing email
+       - billing_phone (string, optional): Billing phone
+       - shipping_first_name (string, optional): Shipping first name
+       - shipping_last_name (string, optional): Shipping last name
+       - shipping_company (string, optional): Shipping company
+       - shipping_address_1 (string, optional): Shipping address line 1
+       - shipping_address_2 (string, optional): Shipping address line 2
+       - shipping_city (string, optional): Shipping city
+       - shipping_state (string, optional): Shipping state
+       - shipping_postcode (string, optional): Shipping postcode
+       - shipping_country (string, optional): Shipping country
+
+PUT    /customers/{id} (requires auth)
+       Body Parameters: (same as POST, all optional)
+
+DELETE /customers/{id} (requires auth)
+       Parameters:
+       - reassign (integer, optional): User ID to reassign orders to
+
+GET    /customers/{id}/orders (requires auth)
+       Parameters:
+       - per_page (integer, optional): Number of orders (default: 10)
+       - page (integer, optional): Page number (default: 1)
+       - status (string, optional): Order status
+       - orderby (string, optional): Order by field (default: date)
+       - order (string, optional): ASC or DESC (default: DESC)
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/customers
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/customers/123
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/customers
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/customers/123
+DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/customers/123
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/customers/123/orders
+
+--------------------------------------------------------------------------------
+5. ORDERS API
+--------------------------------------------------------------------------------
+
+GET    /orders (requires auth)
+       Parameters:
+       - per_page (integer, optional): Number of orders (default: 10)
+       - page (integer, optional): Page number (default: 1)
+       - status (string, optional): Order status
+       - customer (integer, optional): Customer ID
+       - date_after (string, optional): Filter orders after date (YYYY-MM-DD)
+       - date_before (string, optional): Filter orders before date (YYYY-MM-DD)
+       - orderby (string, optional): Order by field (default: date)
+       - order (string, optional): ASC or DESC (default: DESC)
+
+GET    /orders/{id} (requires auth)
+       Parameters: None
+
+POST   /orders (requires auth)
+       Body Parameters:
+       - customer_id (integer, optional): Customer ID
+       - line_items (array, required): Array of line items
+         Each item:
+         - product_id (integer, required): Product ID
+         - quantity (integer, required): Quantity
+         - variation_id (integer, optional): Variation ID
+       - billing (object, optional): Billing address
+         - first_name, last_name, company, address_1, address_2, city, state, postcode, country, email, phone
+       - shipping (object, optional): Shipping address
+         - first_name, last_name, company, address_1, address_2, city, state, postcode, country
+       - payment_method (string, optional): Payment method
+       - payment_method_title (string, optional): Payment method title
+       - shipping_method (string, optional): Shipping method
+       - shipping_total (float, optional): Shipping total
+       - status (string, optional): Order status
+       - coupon_code (string, optional): Coupon code to apply
+       - customer_note (string, optional): Customer note
+
+PUT    /orders/{id} (requires auth)
+       Body Parameters: (same as POST, all optional)
+
+PUT    /orders/{id}/status (requires auth)
+       Body Parameters:
+       - status (string, required): New order status
+
+DELETE /orders/{id} (requires auth)
+       Parameters:
+       - force (boolean, optional): Force delete (default: false)
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/orders
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/orders?status=completed&customer=123
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/orders/123
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/orders
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/orders/123
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/orders/123/status
+DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/orders/123
+
+Example Request Body (POST /orders):
+{
+  "customer_id": 123,
+  "line_items": [
+    {
+      "product_id": 456,
+      "quantity": 2
+    }
+  ],
+  "billing": {
+    "first_name": "John",
+    "last_name": "Doe",
+    "email": "john@example.com",
+    "phone": "123-456-7890",
+    "address_1": "123 Main St",
+    "city": "New York",
+    "state": "NY",
+    "postcode": "10001",
+    "country": "US"
+  },
+  "status": "processing",
+  "payment_method": "bacs"
+}
+
+--------------------------------------------------------------------------------
+6. REPORTS API
+--------------------------------------------------------------------------------
+
+GET    /reports/sales (requires auth)
+       Parameters:
+       - start_date (string, optional): Start date (YYYY-MM-DD, default: 30 days ago)
+       - end_date (string, optional): End date (YYYY-MM-DD, default: today)
+
+GET    /reports/top-sellers (requires auth)
+       Parameters:
+       - limit (integer, optional): Number of top sellers (default: 10)
+       - start_date (string, optional): Start date (YYYY-MM-DD)
+       - end_date (string, optional): End date (YYYY-MM-DD)
+
+GET    /reports/orders/totals (requires auth)
+       Parameters: None
+
+GET    /reports/products/totals (requires auth)
+       Parameters: None
+
+GET    /reports/customers/totals (requires auth)
+       Parameters: None
+
+GET    /reports/coupons/totals (requires auth)
+       Parameters: None
+
+GET    /reports/reviews/totals (requires auth)
+       Parameters:
+       - post_type (string, optional): Post type (default: product)
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/reports/sales
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/reports/sales?start_date=2024-01-01&end_date=2024-12-31
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/reports/top-sellers?limit=20
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/reports/orders/totals
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/reports/products/totals
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/reports/customers/totals
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/reports/coupons/totals
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/reports/reviews/totals
+
+--------------------------------------------------------------------------------
+7. SETTINGS API
+--------------------------------------------------------------------------------
+
+GET    /settings (requires auth)
+       Parameters: None
+
+GET    /settings/{group} (requires auth)
+       Parameters: None
+       Groups: general, products, shipping, tax, checkout, account, email, advanced
+
+PUT    /settings/{group} (requires auth)
+       Body Parameters: Varies by group
+       Example for general:
+       - currency (string, optional)
+       - enable_coupons (string, optional): "yes" or "no"
+       - store_city (string, optional)
+       - etc.
+
+GET    /settings/{group}/{key} (requires auth)
+       Parameters: None
+
+PUT    /settings/{group}/{key} (requires auth)
+       Body Parameters:
+       - value (mixed, required): Setting value
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/settings
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/settings/general
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/settings/general
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/settings/general/currency
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/settings/general/currency
+
+Example Request Body (PUT /settings/general):
+{
+  "currency": "USD",
+  "enable_coupons": "yes",
+  "store_city": "New York"
+}
+
+--------------------------------------------------------------------------------
+8. SHIPPING ZONES API
+--------------------------------------------------------------------------------
+
+GET    /shipping/zones (requires auth)
+       Parameters: None
+
+GET    /shipping/zones/{id} (requires auth)
+       Parameters: None
+
+POST   /shipping/zones (requires auth)
+       Body Parameters:
+       - zone_name (string, required): Zone name
+       - zone_order (integer, optional): Zone order
+       - locations (array, optional): Array of location objects
+         Each location:
+         - code (string, required): Location code (e.g., "US", "CA:BC")
+         - type (string, required): Location type (country, state, postcode, continent)
+
+PUT    /shipping/zones/{id} (requires auth)
+       Body Parameters: (same as POST, all optional)
+
+DELETE /shipping/zones/{id} (requires auth)
+       Parameters: None
+
+GET    /shipping/zones/{zone_id}/methods (requires auth)
+       Parameters: None
+
+POST   /shipping/zones/{zone_id}/methods (requires auth)
+       Body Parameters:
+       - method_id (string, required): Shipping method ID (flat_rate, free_shipping, etc.)
+       - settings (object, optional): Method settings
+         - title (string, optional): Method title
+         - cost (string, optional): Cost
+         - enabled (string, optional): "yes" or "no"
+
+GET    /shipping/zones/{zone_id}/methods/{instance_id} (requires auth)
+       Parameters: None
+
+PUT    /shipping/zones/{zone_id}/methods/{instance_id} (requires auth)
+       Body Parameters:
+       - enabled (boolean, optional): Enable/disable method
+       - title (string, optional): Method title
+       - settings (object, optional): Method settings
+
+DELETE /shipping/zones/{zone_id}/methods/{instance_id} (requires auth)
+       Parameters: None
+
+GET    /shipping/methods (requires auth)
+       Parameters: None
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/zones
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/zones
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/zones/1
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/zones/1
+DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/zones/1
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/zones/1/methods
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/zones/1/methods
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/zones/1/methods/2
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/zones/1/methods/2
+DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/zones/1/methods/2
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods
+
+Example Request Body (POST /shipping/zones):
+{
+  "zone_name": "US Shipping",
+  "zone_order": 1,
+  "locations": [
+    {
+      "code": "US",
+      "type": "country"
+    },
+    {
+      "code": "CA:BC",
+      "type": "state"
+    }
+  ]
+}
+
+Example Request Body (POST /shipping/zones/{zone_id}/methods):
+{
+  "method_id": "flat_rate",
+  "settings": {
+    "title": "Standard Shipping",
+    "cost": "10.00",
+    "enabled": "yes"
+  }
+}
+
+--------------------------------------------------------------------------------
+9. SHIPPING METHODS API
+--------------------------------------------------------------------------------
+
+GET    /shipping/methods (requires auth)
+       Parameters: None
+       Note: This endpoint lists all available shipping method types (flat_rate, free_shipping, etc.)
+
+GET    /shipping/methods/{id} (requires auth)
+       Parameters: None
+       Note: Get details of a specific shipping method type by ID
+
+PUT    /shipping/methods/{id} (requires auth)
+       Body Parameters:
+       - enabled (boolean, optional): Enable/disable the shipping method globally
+       - settings (object, optional): Global settings for the shipping method
+
+GET    /shipping/methods/{id}/instances (requires auth)
+       Parameters: None
+       Note: Get all instances of a shipping method across all zones
+
+GET    /shipping/methods/{id}/settings (requires auth)
+       Parameters: None
+       Note: Get global settings for a shipping method
+
+PUT    /shipping/methods/{id}/settings (requires auth)
+       Body Parameters:
+       - settings (object, required): Settings key-value pairs
+
+GET    /shipping/methods/instances (requires auth)
+       Parameters:
+       - method_id (string, optional): Filter by method ID
+
+GET    /shipping/methods/instances/{instance_id} (requires auth)
+       Parameters: None
+       Note: Get a specific shipping method instance by instance ID
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods/flat_rate
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods/flat_rate
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods/flat_rate/instances
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods/flat_rate/settings
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods/flat_rate/settings
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods/instances
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods/instances?method_id=flat_rate
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods/instances/123
+
+Example Request Body (PUT /shipping/methods/{id}):
+{
+  "enabled": true,
+  "settings": {
+    "title": "Flat Rate Shipping",
+    "cost": "5.00"
+  }
+}
+
+Example Request Body (PUT /shipping/methods/{id}/settings):
+{
+  "settings": {
+    "title": "Standard Shipping",
+    "cost": "10.00",
+    "tax_status": "taxable"
+  }
+}
+
+--------------------------------------------------------------------------------
+10. TAXES API
+--------------------------------------------------------------------------------
+
+GET    /taxes (requires auth)
+       Parameters:
+       - country (string, optional): Filter by country code (e.g., "US")
+       - state (string, optional): Filter by state code (e.g., "CA")
+       - class (string, optional): Filter by tax class
+
+GET    /taxes/{id} (requires auth)
+       Parameters: None
+
+POST   /taxes (requires auth)
+       Body Parameters:
+       - country (string, required): Country code (e.g., "US")
+       - state (string, optional): State code (e.g., "CA")
+       - rate (string, required): Tax rate (e.g., "10.00" for 10%)
+       - name (string, optional): Tax rate name
+       - priority (integer, optional): Priority (default: 1)
+       - compound (integer, optional): Compound tax (0 or 1, default: 0)
+       - shipping (integer, optional): Apply to shipping (0 or 1, default: 1)
+       - order (integer, optional): Display order (default: 0)
+       - class (string, optional): Tax class slug (default: "standard")
+
+PUT    /taxes/{id} (requires auth)
+       Body Parameters: (same as POST, all optional)
+
+DELETE /taxes/{id} (requires auth)
+       Parameters: None
+
+GET    /taxes/classes (requires auth)
+       Parameters: None
+
+POST   /taxes/classes (requires auth)
+       Body Parameters:
+       - name (string, required): Tax class name
+
+DELETE /taxes/classes/{slug} (requires auth)
+       Parameters: None
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/taxes
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/taxes?country=US&state=CA
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/taxes/123
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/taxes
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/taxes/123
+DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/taxes/123
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/taxes/classes
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/taxes/classes
+DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/taxes/classes/reduced-rate
+
+Example Request Body (POST /taxes):
+{
+  "country": "US",
+  "state": "CA",
+  "rate": "7.5",
+  "name": "California Sales Tax",
+  "priority": 1,
+  "compound": 0,
+  "shipping": 1,
+  "order": 0,
+  "class": "standard"
+}
+
+Example Request Body (POST /taxes/classes):
+{
+  "name": "Reduced Rate"
+}
+
+================================================================================
+AUTHENTICATION
+================================================================================
+
+Most POST, PUT, DELETE endpoints require authentication.
+
+Authentication Methods:
+1. Application Passwords (recommended)
+2. Cookie authentication (for logged-in users)
+3. Bearer token (if using custom auth)
+
+To get Application Password:
+1. Go to WordPress Admin → Users → Your Profile
+2. Scroll to "Application Passwords"
+3. Enter name and click "Add New Application Password"
+4. Copy the generated password
+
+cURL Example with Authentication:
+curl -X POST "http://localhost/wooautopublix/wp-json/restbridge/v1/posts" \
+  -u "username:application_password" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "New Post", "content": "Content"}'
+
+JavaScript Example:
+fetch('http://localhost/wooautopublix/wp-json/restbridge/v1/posts', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Basic ' + btoa('username:application_password')
+  },
+  body: JSON.stringify({title: 'New Post', content: 'Content'})
+})
+
+================================================================================
+QUICK REFERENCE - ALL ENDPOINTS
+================================================================================
+
+WORDPRESS CORE:
+GET    /posts
+GET    /posts/{id}
+POST   /posts
+PUT    /posts/{id}
+DELETE /posts/{id}
+
+GET    /pages
+GET    /pages/{id}
+POST   /pages
+PUT    /pages/{id}
+DELETE /pages/{id}
+
+GET    /comments
+GET    /comments/{id}
+POST   /comments
+PUT    /comments/{id}
+DELETE /comments/{id}
+
+GET    /categories
+GET    /categories/{id}
+POST   /categories
+PUT    /categories/{id}
+DELETE /categories/{id}
+
+GET    /tags
+GET    /tags/{id}
+POST   /tags
+PUT    /tags/{id}
+DELETE /tags/{id}
+
+GET    /users
+GET    /users/{id}
+GET    /users/me
+POST   /users
+PUT    /users/{id}
+DELETE /users/{id}
+POST   /login
+
+GET    /media
+GET    /media/{id}
+POST   /media
+PUT    /media/{id}
+DELETE /media/{id}
+
+GET    /taxonomies
+GET    /taxonomies/{taxonomy}
+GET    /taxonomies/{taxonomy}/terms
+GET    /taxonomies/{taxonomy}/terms/{id}
+POST   /taxonomies/{taxonomy}/terms
+PUT    /taxonomies/{taxonomy}/terms/{id}
+DELETE /taxonomies/{taxonomy}/terms/{id}
+
+GET    /menus
+GET    /menus/{id}
+GET    /menus/locations
+GET    /menus/locations/{location}
+GET    /menus/pages
+
+GET    /{post_type_name} (dynamic - for all custom post types)
+
+WOOCOMMERCE:
+GET    /products
+GET    /products/{id}
+POST   /products
+PUT    /products/{id}
+DELETE /products/{id}
+
+GET    /cart
+POST   /cart/add
+PUT    /cart/update
+POST   /cart/remove
+POST   /cart/clear
+
+GET    /coupons
+GET    /coupons/{id}
+POST   /coupons
+PUT    /coupons/{id}
+DELETE /coupons/{id}
+POST   /coupons/validate
+
+GET    /customers
+GET    /customers/{id}
+POST   /customers
+PUT    /customers/{id}
+DELETE /customers/{id}
+GET    /customers/{id}/orders
+
+GET    /orders
+GET    /orders/{id}
+POST   /orders
+PUT    /orders/{id}
+PUT    /orders/{id}/status
+DELETE /orders/{id}
+
+GET    /reports/sales
+GET    /reports/top-sellers
+GET    /reports/orders/totals
+GET    /reports/products/totals
+GET    /reports/customers/totals
+GET    /reports/coupons/totals
+GET    /reports/reviews/totals
+
+GET    /settings
+GET    /settings/{group}
+PUT    /settings/{group}
+GET    /settings/{group}/{key}
+PUT    /settings/{group}/{key}
+
+GET    /shipping/zones
+GET    /shipping/zones/{id}
+POST   /shipping/zones
+PUT    /shipping/zones/{id}
+DELETE /shipping/zones/{id}
+GET    /shipping/zones/{zone_id}/methods
+POST   /shipping/zones/{zone_id}/methods
+GET    /shipping/zones/{zone_id}/methods/{instance_id}
+PUT    /shipping/zones/{zone_id}/methods/{instance_id}
+DELETE /shipping/zones/{zone_id}/methods/{instance_id}
+GET    /shipping/methods (deprecated - use /shipping/methods endpoint from Shipping Methods API)
+
+GET    /shipping/methods
+GET    /shipping/methods/{id}
+PUT    /shipping/methods/{id}
+GET    /shipping/methods/{id}/instances
+GET    /shipping/methods/{id}/settings
+PUT    /shipping/methods/{id}/settings
+GET    /shipping/methods/instances
+GET    /shipping/methods/instances/{instance_id}
+
+GET    /taxes
+GET    /taxes/{id}
+POST   /taxes
+PUT    /taxes/{id}
+DELETE /taxes/{id}
+GET    /taxes/classes
+POST   /taxes/classes
+DELETE /taxes/classes/{slug}
+
+================================================================================
+NOTES
+================================================================================
+
+1. All endpoints use namespace: restbridge/v1
+2. Replace "localhost/wooautopublix" with your actual domain
+3. Most POST/PUT/DELETE endpoints require authentication
+4. GET endpoints are generally public (except users, orders, reports, settings)
+5. Query parameters are passed as URL parameters (e.g., ?per_page=10&page=2)
+6. POST/PUT request bodies should be JSON with Content-Type: application/json
+7. Cart endpoints use WooCommerce session cookies (no auth required)
+8. All dates should be in YYYY-MM-DD format
+9. All prices/amounts should be numeric or string format (e.g., "10.00")
+10. For file uploads (media), use multipart/form-data
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
+
