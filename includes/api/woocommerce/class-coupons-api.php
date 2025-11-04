@@ -348,8 +348,26 @@ class RESTBridge_Coupons_API {
 		];
 	}
 
-	public function check_permission() {
-		return current_user_can('manage_woocommerce');
+	public function check_permission($request = null) {
+		$user_id = get_current_user_id();
+		
+		// Fallback: Try Basic Auth if not authenticated
+		if (!$user_id && $request) {
+			$auth_header = $request->get_header('authorization');
+			if ($auth_header && preg_match('/Basic\s+(.+)$/i', $auth_header, $matches)) {
+				$credentials = base64_decode($matches[1]);
+				if (strpos($credentials, ':') !== false) {
+					list($username, $password) = explode(':', $credentials, 2);
+					$user = wp_authenticate($username, $password);
+					if (!is_wp_error($user)) {
+						wp_set_current_user($user->ID);
+						$user_id = $user->ID;
+					}
+				}
+			}
+		}
+		
+		return $user_id && (current_user_can('manage_woocommerce') || current_user_can('manage_options') || in_array('administrator', (array)wp_get_current_user()->roles));
 	}
 }
 

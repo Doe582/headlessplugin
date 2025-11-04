@@ -523,7 +523,7 @@ OR
   "key": "cart_item_key",
   "quantity": 3
 }
-
+2
 POST /cart/remove:
 {
   "product_id": 123
@@ -834,47 +834,95 @@ Example Request Body (PUT /settings/general):
 
 GET    /shipping/zones (requires auth)
        Parameters: None
+       Description: Get all shipping zones including "Rest of the World" zone
+       Response: Returns array of zones with id, name, order, locations, methods, method_count
 
 GET    /shipping/zones/{id} (requires auth)
        Parameters: None
+       Description: Get a specific shipping zone by ID
+       Response: Returns zone object with id, name, order, locations, methods, method_count
 
 POST   /shipping/zones (requires auth)
        Body Parameters:
-       - zone_name (string, required): Zone name
-       - zone_order (integer, optional): Zone order
-       - locations (array, optional): Array of location objects
-         Each location:
-         - code (string, required): Location code (e.g., "US", "CA:BC")
-         - type (string, required): Location type (country, state, postcode, continent)
+       - zone_name (string, required): Zone name (e.g., "US Shipping", "Europe Zone")
+       - zone_order (integer, optional): Zone display order (default: 0)
+       - locations (array, optional): Zone locations
+         Each location object:
+         - code (string, required): Location code
+         - type (string, required): Location type
+           Types: "country", "state", "postcode", "continent"
+         Examples:
+           - Country: {"code": "US", "type": "country"}
+           - State: {"code": "US:CA", "type": "state"} or {"code": "CA:BC", "type": "state"}
+           - Postcode: {"code": "90210...90215", "type": "postcode"}
+           - Continent: {"code": "EU", "type": "continent"}
+       Description: Create a new shipping zone
+       Response: Returns created zone object with status 201
 
 PUT    /shipping/zones/{id} (requires auth)
-       Body Parameters: (same as POST, all optional)
+       Body Parameters: (all optional, only include fields to update)
+       - zone_name (string, optional): Update zone name
+       - zone_order (integer, optional): Update zone order
+       - locations (array, optional): Update zone locations (replaces all existing)
+         Same format as POST locations
+       Description: Update an existing shipping zone
+       Response: Returns updated zone object
 
 DELETE /shipping/zones/{id} (requires auth)
        Parameters: None
+       Description: Delete a shipping zone
+       Response: Returns {"deleted": true, "id": zone_id}
 
 GET    /shipping/zones/{zone_id}/methods (requires auth)
        Parameters: None
+       Description: Get all shipping methods in a specific zone
+       Response: Returns object with zone_id, methods array, and total count
 
 POST   /shipping/zones/{zone_id}/methods (requires auth)
        Body Parameters:
-       - method_id (string, required): Shipping method ID (flat_rate, free_shipping, etc.)
-       - settings (object, optional): Method settings
-         - title (string, optional): Method title
-         - cost (string, optional): Cost
-         - enabled (string, optional): "yes" or "no"
+       - method_id (string, required): Shipping method ID
+         Available methods: "flat_rate", "free_shipping", "local_pickup", "international_delivery"
+       - settings (object, optional): Method instance settings
+         For flat_rate:
+           - title (string, optional): Method title (e.g., "Standard Shipping")
+           - cost (string, optional): Shipping cost (e.g., "10.00")
+           - tax_status (string, optional): "taxable" or "none"
+           - class_cost (string, optional): Cost per shipping class
+           - no_class_cost (string, optional): Cost when no shipping class
+           - type (string, optional): "class" or "order"
+         For free_shipping:
+           - title (string, optional): Method title
+           - requires (string, optional): "coupon", "min_amount", "either", ""
+           - min_amount (string, optional): Minimum order amount (e.g., "100.00")
+         For local_pickup:
+           - title (string, optional): Method title
+           - tax_status (string, optional): "taxable" or "none"
+           - cost (string, optional): Pickup cost (usually "0.00")
+       Description: Add a shipping method to a zone
+       Response: Returns success, instance_id, and method object with status 201
 
 GET    /shipping/zones/{zone_id}/methods/{instance_id} (requires auth)
        Parameters: None
+       Description: Get a specific shipping method instance in a zone
+       Response: Returns method object with instance_id, method_id, method_title, title, enabled, settings
 
 PUT    /shipping/zones/{zone_id}/methods/{instance_id} (requires auth)
-       Body Parameters:
-       - enabled (boolean, optional): Enable/disable method
-       - title (string, optional): Method title
-       - settings (object, optional): Method settings
+       Body Parameters: (all optional, only include fields to update)
+       - enabled (boolean, optional): Enable/disable method (true/false)
+       - title (string, optional): Update method title (top-level, not in settings)
+       - settings (object, optional): Update method instance settings
+         Same settings as POST /methods (flat_rate, free_shipping, local_pickup)
+         Examples:
+           Flat Rate: {"enabled": true, "settings": {"cost": "15.00", "title": "Express", "tax_status": "taxable"}}
+           Free Shipping: {"enabled": true, "settings": {"min_amount": "150.00", "requires": "min_amount"}}
+           Local Pickup: {"enabled": false, "title": "Store Pickup"}
+       Description: Update a shipping method instance in a zone
+       Response: Returns success and updated method object
 
 DELETE /shipping/zones/{zone_id}/methods/{instance_id} (requires auth)
        Parameters: None
+       Description: Remove a shipping method from a zone
+       Response: Returns {"deleted": true, "instance_id": instance_id}
 
 GET    /shipping/methods (requires auth)
        Parameters: None
@@ -892,7 +940,9 @@ PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/zones/1/met
 DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/zones/1/methods/2
 GET    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods
 
-Example Request Body (POST /shipping/zones):
+Example Request Bodies:
+
+POST /shipping/zones:
 {
   "zone_name": "US Shipping",
   "zone_order": 1,
@@ -902,20 +952,90 @@ Example Request Body (POST /shipping/zones):
       "type": "country"
     },
     {
-      "code": "CA:BC",
+      "code": "CA",
+      "type": "country"
+    },
+    {
+      "code": "US:CA",
       "type": "state"
+    },
+    {
+      "code": "90210...90215",
+      "type": "postcode"
+    },
+    {
+      "code": "EU",
+      "type": "continent"
     }
   ]
 }
 
-Example Request Body (POST /shipping/zones/{zone_id}/methods):
+PUT /shipping/zones/{id}:
+{
+  "zone_name": "Updated Zone Name",
+  "zone_order": 2,
+  "locations": [
+    {
+      "code": "US",
+      "type": "country"
+    }
+  ]
+}
+
+POST /shipping/zones/{zone_id}/methods (Flat Rate):
 {
   "method_id": "flat_rate",
   "settings": {
     "title": "Standard Shipping",
     "cost": "10.00",
-    "enabled": "yes"
+    "tax_status": "taxable",
+    "type": "class"
   }
+}
+
+POST /shipping/zones/{zone_id}/methods (Free Shipping):
+{
+  "method_id": "free_shipping",
+  "settings": {
+    "title": "Free Shipping",
+    "requires": "min_amount",
+    "min_amount": "100.00"
+  }
+}
+
+POST /shipping/zones/{zone_id}/methods (Local Pickup):
+{
+  "method_id": "local_pickup",
+  "settings": {
+    "title": "Local Pickup",
+    "tax_status": "taxable",
+    "cost": "0.00"
+  }
+}
+
+PUT /shipping/zones/{zone_id}/methods/{instance_id} (Update Flat Rate):
+{
+  "enabled": true,
+  "title": "Express Shipping",
+  "settings": {
+    "cost": "25.00",
+    "tax_status": "taxable",
+    "title": "Express Shipping"
+  }
+}
+
+PUT /shipping/zones/{zone_id}/methods/{instance_id} (Update Free Shipping):
+{
+  "enabled": true,
+  "settings": {
+    "min_amount": "150.00",
+    "requires": "min_amount"
+  }
+}
+
+PUT /shipping/zones/{zone_id}/methods/{instance_id} (Disable Method):
+{
+  "enabled": false
 }
 
 --------------------------------------------------------------------------------
@@ -961,8 +1081,8 @@ GET    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods/fla
 PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods/flat_rate
 GET    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods/flat_rate/instances
 GET    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods/flat_rate/settings
-PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods/flat_rate/settings
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods/instances
+PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods/flat_rates/settings
+GET    http://localhost/wooautopublix/wp-json/restbricustomersdge/v1/shipping/methods/instances
 GET    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods/instances?method_id=flat_rate
 GET    http://localhost/wooautopublix/wp-json/restbridge/v1/shipping/methods/instances/123
 

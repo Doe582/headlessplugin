@@ -556,16 +556,7 @@ class RESTBridge_Customers_API {
 			}
 		}
 		
-		return $user_id && $this->is_admin_user();
-	}
-
-	/**
-	 * Check if current user is admin
-	 */
-	private function is_admin_user() {
-		return current_user_can('manage_woocommerce') || 
-			   current_user_can('manage_options') || 
-			   in_array('administrator', (array)wp_get_current_user()->roles);
+		return $user_id && (current_user_can('manage_woocommerce') || current_user_can('manage_options') || in_array('administrator', (array)wp_get_current_user()->roles));
 	}
 }
 
