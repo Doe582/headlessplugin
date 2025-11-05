@@ -20,6 +20,14 @@ class RESTBridge_Plugin {
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-menus-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-custom-post-types-api.php';
         
+        // Elementor & Gutenberg APIs
+        require_once plugin_dir_path(__FILE__) . '../api/elementor/class-content-parser-trait.php';
+        require_once plugin_dir_path(__FILE__) . '../api/elementor/class-elementor-pages-api.php';
+        require_once plugin_dir_path(__FILE__) . '../api/elementor/class-gutenberg-pages-api.php';
+        require_once plugin_dir_path(__FILE__) . '../api/elementor/class-pages-content-api.php';
+        require_once plugin_dir_path(__FILE__) . '../api/elementor/class-header-api.php';
+        require_once plugin_dir_path(__FILE__) . '../api/elementor/class-footer-api.php';
+        
         // WooCommerce API
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-products-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-cart-api.php';
@@ -81,6 +89,22 @@ class RESTBridge_Plugin {
 
         $cpt_api = new RESTBridge_Custom_Post_Types_API();
         $cpt_api->register_routes();
+
+        // Elementor & Gutenberg APIs
+        $elementor_pages_api = new RESTBridge_Elementor_Pages_API();
+        $elementor_pages_api->register_routes();
+
+        $gutenberg_pages_api = new RESTBridge_Gutenberg_Pages_API();
+        $gutenberg_pages_api->register_routes();
+
+        $pages_content_api = new RESTBridge_Pages_Content_API();
+        $pages_content_api->register_routes();
+
+        $header_api = new RESTBridge_Header_API();
+        $header_api->register_routes();
+
+        $footer_api = new RESTBridge_Footer_API();
+        $footer_api->register_routes();
 
         // WooCommerce APIs
         if (class_exists('WooCommerce')) {

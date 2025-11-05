@@ -1272,6 +1272,14 @@ GET    /menus/pages
 
 GET    /{post_type_name} (dynamic - for all custom post types)
 
+HEADER & FOOTER:
+GET    /header
+GET    /header/{id}
+GET    /headers
+GET    /footer
+GET    /footer/{id}
+GET    /footers
+
 WOOCOMMERCE:
 GET    /products
 GET    /products/{id}
@@ -1349,6 +1357,411 @@ DELETE /taxes/{id}
 GET    /taxes/classes
 POST   /taxes/classes
 DELETE /taxes/classes/{slug}
+
+================================================================================
+ELEMENTOR API ENDPOINTS
+================================================================================
+
+--------------------------------------------------------------------------------
+ELEMENTOR PAGES API
+--------------------------------------------------------------------------------
+
+GET    /elementor/pages
+       Get all pages that use Elementor
+       Parameters:
+       - per_page (integer, optional): Number of pages per page (default: -1, all)
+       - page (integer, optional): Page number (default: 1)
+       - search (string, optional): Search term
+       - status (string, optional): Page status (default: publish)
+       
+       Response:
+       {
+         "pages": [
+           {
+             "id": 123,
+             "title": "Page Title",
+             "slug": "page-slug",
+             "permalink": "http://example.com/page-slug",
+             "status": "publish",
+             "modified": "2024-01-01 12:00:00"
+           }
+         ],
+         "total": 10,
+         "pages_count": 1
+       }
+
+GET    /elementor/pages/{id}
+       Get Elementor content for a specific page by ID
+       Parameters: None
+       
+       Response:
+       {
+         "page": {
+           "id": 123,
+           "title": "Page Title",
+           "slug": "page-slug",
+           "permalink": "http://example.com/page-slug",
+           "featured_image": "http://example.com/image.jpg"
+         },
+         "sections": [
+           {
+             "index": 0,
+             "type": "section",
+             "settings": {},
+             "columns": [
+               {
+                 "type": "column",
+                 "settings": {},
+                 "widgets": [
+                   {
+                     "type": "heading",
+                     "id": "widget-id",
+                     "settings": {
+                       "title": "Heading Title",
+                       "size": "default",
+                       "alignment": "left"
+                     }
+                   },
+                   {
+                     "type": "text-editor",
+                     "id": "widget-id-2",
+                     "settings": {
+                       "editor": "Text content here",
+                       "alignment": "left"
+                     }
+                   },
+                   {
+                     "type": "button",
+                     "id": "widget-id-3",
+                     "settings": {
+                       "text": "Click Me",
+                       "link": "http://example.com",
+                       "link_text": "http://example.com",
+                       "alignment": "center"
+                     }
+                   },
+                   {
+                     "type": "image",
+                     "id": "widget-id-4",
+                     "settings": {
+                       "image_id": 456,
+                       "image_url": "http://example.com/image.jpg",
+                       "alt": "Image Alt Text",
+                       "caption": "Image Caption",
+                       "alignment": "center"
+                     }
+                   },
+                   {
+                     "type": "image-box",
+                     "id": "widget-id-5",
+                     "settings": {
+                       "title": "Box Title",
+                       "description": "Box description text",
+                       "image_id": 456,
+                       "image_url": "http://example.com/image.jpg"
+                     }
+                   }
+                 ],
+                 "total_widgets": 5
+               }
+             ],
+             "total_columns": 1
+           }
+         ],
+         "total_sections": 1
+       }
+
+GET    /elementor/pages/slug/{slug}
+       Get Elementor content for a page by slug
+       Parameters: None
+       
+       Response: Same as /elementor/pages/{id}
+
+Supported Widget Types:
+- heading: Title with size and alignment
+- text-editor: Text content with alignment
+- button: Button with text, link, and alignment
+- image: Image with URL, alt text, caption
+- image-box: Image with title and description
+- icon-box: Icon with title and description
+- video: Video URL and settings
+- html: Raw HTML content
+- shortcode: Shortcode content
+- spacer: Spacing element
+- divider: Divider line
+- accordion: Accordion with tabs
+- tabs: Tabbed content
+- testimonial: Testimonial with content, name, job, image
+- icon-list: List with icons
+- social-icons: Social media icons
+- Other widget types: Returns all settings as-is
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/elementor/pages
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/elementor/pages/123
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/elementor/pages/slug/my-page
+
+Example Response Structure:
+- Each page contains sections
+- Each section contains columns
+- Each column contains widgets
+- Widgets have type-specific settings extracted from Elementor data
+- All images include both ID and URL
+- Nested elements (like tabs, accordions) are recursively parsed
+
+--------------------------------------------------------------------------------
+GUTENBERG PAGES API
+--------------------------------------------------------------------------------
+
+GET    /gutenberg/pages
+       Get all pages that use Gutenberg blocks
+       Parameters:
+       - per_page (integer, optional): Number of pages per page (default: -1, all)
+       - page (integer, optional): Page number (default: 1)
+       - search (string, optional): Search term
+       - status (string, optional): Page status (default: publish)
+       
+       Response:
+       {
+         "pages": [
+           {
+             "id": 123,
+             "title": "Page Title",
+             "slug": "page-slug",
+             "permalink": "http://example.com/page-slug",
+             "status": "publish",
+             "modified": "2024-01-01 12:00:00"
+           }
+         ],
+         "total": 10,
+         "pages_count": 1
+       }
+
+GET    /gutenberg/pages/{id}
+       Get Gutenberg blocks content for a specific page by ID
+       Parameters: None
+       
+       Response:
+       {
+         "page": {
+           "id": 123,
+           "title": "Page Title",
+           "slug": "page-slug",
+           "permalink": "http://example.com/page-slug",
+           "featured_image": "http://example.com/image.jpg",
+           "editor": "gutenberg"
+         },
+         "blocks": [
+           {
+             "index": 0,
+             "type": "heading",
+             "block_name": "core/heading",
+             "content": {
+               "text": "Heading Text",
+               "level": 2,
+               "align": "left"
+             },
+             "attributes": {}
+           },
+           {
+             "index": 1,
+             "type": "paragraph",
+             "block_name": "core/paragraph",
+             "content": {
+               "text": "Paragraph text content",
+               "align": "left",
+               "dropCap": false
+             },
+             "attributes": {}
+           },
+           {
+             "index": 2,
+             "type": "image",
+             "block_name": "core/image",
+             "content": {
+               "image_id": 456,
+               "image_url": "http://example.com/image.jpg",
+               "alt": "Image Alt Text",
+               "caption": "Image Caption",
+               "align": "center"
+             },
+             "attributes": {}
+           },
+           {
+             "index": 3,
+             "type": "button",
+             "block_name": "core/button",
+             "content": {
+               "text": "Click Me",
+               "url": "http://example.com",
+               "linkTarget": "_self",
+               "align": "center"
+             },
+             "attributes": {}
+           }
+         ],
+         "total_blocks": 4
+       }
+
+GET    /gutenberg/pages/slug/{slug}
+       Get Gutenberg blocks content for a page by slug
+       Parameters: None
+       
+       Response: Same as /gutenberg/pages/{id}
+
+Supported Gutenberg Block Types:
+- heading: Title with level and alignment
+- paragraph: Text content with alignment
+- image: Image with URL, alt text, caption
+- button: Button with text, URL, link target
+- gallery: Image gallery with multiple images
+- quote: Quote with citation
+- list: Ordered or unordered list
+- code: Code block
+- html: Raw HTML content
+- columns: Multi-column layout (contains nested blocks)
+- group: Group container (contains nested blocks)
+- cover: Cover block with background (contains nested blocks)
+- media-text: Media and text side by side (contains nested blocks)
+- video: Video with URL and settings
+- audio: Audio player
+- file: File download link
+- table: Table with head and body
+- separator: Divider line
+- spacer: Spacing element
+- Other block types: Returns HTML and text content
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/gutenberg/pages
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/gutenberg/pages/123
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/gutenberg/pages/slug/my-page
+
+--------------------------------------------------------------------------------
+UNIVERSAL PAGE CONTENT API (Auto-detect Elementor or Gutenberg)
+--------------------------------------------------------------------------------
+
+GET    /pages/content/{id}
+       Get page content - automatically detects Elementor or Gutenberg
+       Parameters: None
+       
+       Response: 
+       - If Elementor: Returns Elementor structure (sections/columns/widgets)
+       - If Gutenberg: Returns Gutenberg structure (blocks)
+       - Includes "editor" field indicating which editor was used
+
+GET    /pages/content/slug/{slug}
+       Get page content by slug - automatically detects Elementor or Gutenberg
+       Parameters: None
+       
+       Response: Same as /pages/content/{id}
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/pages/content/123
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/pages/content/slug/my-page
+
+--------------------------------------------------------------------------------
+HEADER API ENDPOINTS
+--------------------------------------------------------------------------------
+
+GET    /header
+       Get active header (Elementor Theme Builder, Gutenberg template part, or theme header)
+       Parameters: None
+       
+       Response:
+       {
+         "type": "elementor|gutenberg|theme",
+         "template_id": 123,
+         "template_title": "Header Template Name",
+         "page": { ... },
+         "sections": [ ... ] or "blocks": [ ... ] or "menus": { ... },
+         "total_sections": 2 or "total_blocks": 5
+       }
+       
+       - For Elementor: Returns parsed Elementor structure (sections/columns/widgets)
+       - For Gutenberg: Returns parsed Gutenberg blocks
+       - For Theme: Returns menus and widget areas
+
+GET    /header/{id}
+       Get header by template ID
+       Parameters: None
+       
+       Response: Same structure as /header, but for specific template ID
+
+GET    /headers
+       Get all available headers
+       Parameters: None
+       
+       Response:
+       {
+         "headers": [
+           {
+             "id": 123,
+             "title": "Header Template",
+             "slug": "header-template",
+             "type": "elementor|gutenberg",
+             "status": "publish",
+             "modified": "2024-01-01 12:00:00"
+           }
+         ],
+         "total": 1
+       }
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/header
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/header/123
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/headers
+
+--------------------------------------------------------------------------------
+FOOTER API ENDPOINTS
+--------------------------------------------------------------------------------
+
+GET    /footer
+       Get active footer (Elementor Theme Builder, Gutenberg template part, or theme footer)
+       Parameters: None
+       
+       Response:
+       {
+         "type": "elementor|gutenberg|theme",
+         "template_id": 123,
+         "template_title": "Footer Template Name",
+         "page": { ... },
+         "sections": [ ... ] or "blocks": [ ... ] or "widgets": { ... },
+         "total_sections": 2 or "total_blocks": 5
+       }
+       
+       - For Elementor: Returns parsed Elementor structure (sections/columns/widgets)
+       - For Gutenberg: Returns parsed Gutenberg blocks
+       - For Theme: Returns widget areas and copyright text
+
+GET    /footer/{id}
+       Get footer by template ID
+       Parameters: None
+       
+       Response: Same structure as /footer, but for specific template ID
+
+GET    /footers
+       Get all available footers
+       Parameters: None
+       
+       Response:
+       {
+         "footers": [
+           {
+             "id": 123,
+             "title": "Footer Template",
+             "slug": "footer-template",
+             "type": "elementor|gutenberg",
+             "status": "publish",
+             "modified": "2024-01-01 12:00:00"
+           }
+         ],
+         "total": 1
+       }
+
+Test URLs:
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/footer
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/footer/123
+GET    http://localhost/wooautopublix/wp-json/restbridge/v1/footers
 
 ================================================================================
 NOTES
