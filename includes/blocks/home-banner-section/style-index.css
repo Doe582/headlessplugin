@@ -1,0 +1,217 @@
+.restbridge-home-banner-section {
+    width: 100%;
+    padding: 80px 0;
+    background-color: #f5f5f0;
+}
+
+.restbridge-home-banner-container {
+    display: flex;
+    align-items: center;
+    gap: 60px;
+    max-width: 1400px;
+    margin: 0;
+    padding: 0 40px;
+}
+
+.restbridge-home-banner-content {
+    flex: 1;
+    max-width: 60%;
+}
+
+.restbridge-home-banner-text {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.restbridge-home-banner-text .wp-block-heading, .restbridge-home-banner-text h1, .restbridge-home-banner-text h2 {
+    font-size: 56px;
+    font-weight: 700;
+    line-height: 1.2;
+    margin: 0;
+    color: #000;
+    letter-spacing: -0.5px;
+}
+
+.restbridge-home-banner-text .wp-block-paragraph, .restbridge-home-banner-text p {
+    font-size: 18px;
+    line-height: 1.7;
+    margin: 0;
+    color: #333;
+    max-width: 90%;
+}
+
+.restbridge-home-banner-text .wp-block-button__link {
+    display: inline-block;
+    padding: 16px 40px;
+    background-color: #2d5016;
+    color: #fff;
+    text-decoration: none;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 16px;
+    transition: all 0.3s ease;
+    align-self: flex-start;
+    border: none;
+    cursor: pointer;
+}
+
+.restbridge-home-banner-text .wp-block-button__link:hover {
+    background-color: #1f350f;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(45, 80, 22, 0.3);
+}
+
+.restbridge-home-banner-image-wrapper {
+    flex: 1;
+    max-width: 40%;
+    position: relative;
+}
+
+.restbridge-home-banner-image-frame {
+    position: relative;
+    width: 100%;
+    padding-bottom: 120%;
+    overflow: hidden;
+    border-radius: 24px;
+    border: 4px solid #2d5016;
+    background: #fff;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
+.restbridge-home-banner-image {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.restbridge-home-banner-badge {
+    position: absolute;
+    bottom: 30px;
+    left: 30px;
+    width: 110px;
+    height: 110px;
+    border-radius: 50%;
+    background-color: #2d5016;
+    border: 4px solid #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.restbridge-home-banner-badge::after {
+    content: '';
+    position: absolute;
+    right: -20px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 40px;
+    height: 2px;
+    background-color: #8b4513;
+    border-radius: 2px;
+}
+
+.restbridge-home-banner-badge-percent {
+    font-size: 32px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1;
+}
+
+.restbridge-home-banner-badge-text {
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    line-height: 1;
+    margin-top: 6px;
+}
+
+.restbridge-home-banner-placeholder {
+    padding: 80px 20px;
+    text-align: center;
+    background: #f5f5f5;
+    border: 2px dashed #ccc;
+    border-radius: 12px;
+    color: #666;
+    font-size: 16px;
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    .restbridge-home-banner-container {
+        flex-direction: column;
+        gap: 40px;
+    }
+
+    .restbridge-home-banner-content {
+        max-width: 100%;
+    }
+
+    .restbridge-home-banner-image-wrapper {
+        max-width: 100%;
+    }
+
+    .restbridge-home-banner-text .wp-block-heading, .restbridge-home-banner-text h1, .restbridge-home-banner-text h2 {
+        font-size: 42px;
+    }
+
+    .restbridge-home-banner-text .wp-block-paragraph, .restbridge-home-banner-text p {
+        max-width: 100%;
+    }
+}
+
+@media (max-width: 768px) {
+    .restbridge-home-banner-section {
+        padding: 60px 0;
+    }
+
+    .restbridge-home-banner-container {
+        padding: 0 20px;
+        gap: 30px;
+    }
+
+    .restbridge-home-banner-text .wp-block-heading, .restbridge-home-banner-text h1, .restbridge-home-banner-text h2 {
+        font-size: 32px;
+    }
+
+    .restbridge-home-banner-text .wp-block-paragraph, .restbridge-home-banner-text p {
+        font-size: 16px;
+    }
+
+    .restbridge-home-banner-text .wp-block-button__link {
+        padding: 14px 32px;
+        font-size: 14px;
+    }
+
+    .restbridge-home-banner-badge {
+        width: 90px;
+        height: 90px;
+        bottom: 20px;
+        left: 20px;
+    }
+
+    .restbridge-home-banner-badge-percent {
+        font-size: 24px;
+    }
+
+    .restbridge-home-banner-badge-text {
+        font-size: 12px;
+    }
+}
+
+
+.restbridge-home-banner-text .wp-block-button__link::after {
+    content: ' →';
+    margin-left: 8px;
+}
+
+.restbridge-home-banner-text .wp-block-buttons {
+    margin: 0;
+    padding: 0;
+}

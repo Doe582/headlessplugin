@@ -692,6 +692,7 @@ trait RESTBridge_Content_Parser {
             'block_name' => $block_name,
             'content' => $this->extract_gutenberg_block_content($block_type, $attrs, $inner_html, $block),
             'attributes' => $this->clean_settings($attrs),
+            'raw_content' => $inner_html,
         ];
 
         // Add identifier from content if available (title, text, etc.)
@@ -777,6 +778,24 @@ trait RESTBridge_Content_Parser {
             case 'columns':
                 if (isset($content['columns'])) {
                     $identifier = $content['columns'] . ' Column Layout';
+                }
+                break;
+                
+            case 'home-banner-section':
+                $identifier_source = '';
+                if (!empty($attrs['title'])) {
+                    $identifier_source = $attrs['title'];
+                } elseif (isset($block['innerBlocks'][0]['innerHTML'])) {
+                    $identifier_source = $block['innerBlocks'][0]['innerHTML'];
+                } elseif (!empty($content['title'])) {
+                    $identifier_source = $content['title'];
+                }
+                $identifier_source = wp_strip_all_tags($identifier_source);
+                if (!empty($identifier_source)) {
+                    $identifier = substr($identifier_source, 0, 50);
+                    if (strlen($identifier_source) > 50) {
+                        $identifier .= '...';
+                    }
                 }
                 break;
                 
@@ -985,6 +1004,53 @@ trait RESTBridge_Content_Parser {
                 // These blocks contain nested blocks, content is in inner blocks
                 $content = [
                     'align' => isset($attrs['align']) ? $attrs['align'] : '',
+                ];
+                break;
+
+            case 'home-banner-section':
+                $image_id = isset($attrs['imageId']) ? intval($attrs['imageId']) : 0;
+                $image_url = isset($attrs['imageUrl']) ? $attrs['imageUrl'] : '';
+                if ($image_id > 0 && empty($image_url)) {
+                    $image_url = wp_get_attachment_image_url($image_id, 'full');
+                }
+
+                $title_value = '';
+                $description_value = '';
+                $button_text_value = '';
+                $button_url_value = '';
+
+                $inner_blocks_data = $block['innerBlocks'] ?? [];
+                foreach ($inner_blocks_data as $inner) {
+                    $inner_name = $inner['blockName'] ?? '';
+                    if ($inner_name === 'core/heading') {
+                        $title_value = $inner['attrs']['content'] ?? ($inner['innerHTML'] ?? '');
+                    } elseif ($inner_name === 'core/paragraph') {
+                        $description_value = $inner['attrs']['content'] ?? ($inner['innerHTML'] ?? '');
+                    } elseif ($inner_name === 'core/buttons' && !empty($inner['innerBlocks'])) {
+                        $button_block = $inner['innerBlocks'][0];
+                        $button_text_value = $button_block['attrs']['text'] ?? ($button_block['innerHTML'] ?? '');
+                        $button_url_value = $button_block['attrs']['url'] ?? ($button_block['attrs']['href'] ?? '');
+                    }
+                }
+
+                $content = [
+                    'title' => wp_strip_all_tags($title_value),
+                    'description' => wp_strip_all_tags($description_value),
+                    'button' => [
+                        'text' => wp_strip_all_tags($button_text_value),
+                        'url' => $button_url_value,
+                    ],
+                    'image' => [
+                        'id' => $image_id,
+                        'url' => $image_url,
+                    ],
+                    'discount' => [
+                        'percent' => isset($attrs['discountPercent']) ? $attrs['discountPercent'] : '',
+                        'show' => isset($attrs['showDiscountBadge']) ? (bool) $attrs['showDiscountBadge'] : true,
+                    ],
+                    'background_color' => isset($attrs['backgroundColor']) ? $attrs['backgroundColor'] : '',
+                    'align' => isset($attrs['align']) ? $attrs['align'] : '',
+                    'inner_blocks' => $inner_blocks_data,
                 ];
                 break;
 

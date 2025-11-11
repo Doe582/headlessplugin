@@ -45,13 +45,23 @@ class RESTBridge_Plugin {
         require_once plugin_dir_path(__FILE__) . '../woocommerce/class-woocommerce-manager.php';
         require_once plugin_dir_path(__FILE__) . '../woocommerce/class-woocommerce-settings.php';
         require_once plugin_dir_path(__FILE__) . '../admin/class-settings.php';
+        
+        // Blocks
+        require_once plugin_dir_path(__FILE__) . '../blocks/class-home-banner-block.php';
+        
     }
 
     private function define_hooks() {
         add_action('rest_api_init', [$this, 'register_api_routes']);
+        add_action('rest_api_init', [$this, 'bootstrap_wc_for_rest']);
         add_action('admin_menu', [$this, 'add_plugin_menu']);
         add_action('init', [$this, 'init_content_manager']);
         add_action('init', [$this, 'init_woocommerce_manager']);
+        add_action('init', [$this, 'init_blocks']);
+    }
+    
+    public function init_blocks() {
+        // Blocks are auto-initialized via their constructors
     }
 
     public function run() {
@@ -153,6 +163,46 @@ class RESTBridge_Plugin {
         if (class_exists('WooCommerce')) {
             new RESTBridge_WooCommerce_Manager();
             new RESTBridge_WooCommerce_Settings();
+        }
+    }
+
+    /**
+     * Ensure WooCommerce session and cart are ready for REST requests.
+     *
+     * @return void
+     */
+    public function bootstrap_wc_for_rest() {
+        if (!function_exists('WC')) {
+            return;
+        }
+
+        $wc = WC();
+
+        // Load frontend helpers (sessions, cart hooks, etc.)
+        if (method_exists($wc, 'frontend_includes')) {
+            $wc->frontend_includes();
+        }
+
+        // Ensure a session handler exists
+        if (empty($wc->session)) {
+            if (method_exists($wc, 'initialize_session')) {
+                $wc->initialize_session();
+            } elseif (class_exists('WC_Session_Handler')) {
+                $wc->session = new WC_Session_Handler();
+                $wc->session->init();
+            }
+        } elseif (method_exists($wc->session, 'init')) {
+            $wc->session->init();
+        }
+
+        // Load cart object if needed
+        if (empty($wc->cart)) {
+            wc_load_cart();
+        }
+
+        // Ensure totals are calculated (important for mini cart)
+        if ($wc->cart && method_exists($wc->cart, 'calculate_totals')) {
+            $wc->cart->calculate_totals();
         }
     }
 }

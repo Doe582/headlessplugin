@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schemas.wp.org/trunk/block.json",
+  "apiVersion": 3,
+  "name": "restbridge/home-banner-section",
+  "title": "Home Banner Section",
+  "category": "design",
+  "icon": "cover-image",
+  "description": "A hero banner section with title, description, button, image, and discount badge",
+  "keywords": ["banner", "hero", "homepage", "section", "home"],
+  "version": "1.0.0",
+  "textdomain": "restbridge",
+  "editorScript": "file:./index.js",
+  "editorStyle": "file:./editor.css",
+  "style": "file:./style-index.css",
+  "render": "file:./render.php",
+  "attributes": {
+    "imageId": { "type": "number", "default": 0 },
+    "imageUrl": { "type": "string", "default": "" },
+    "discountPercent": { "type": "string", "default": "70" },
+    "showDiscountBadge": { "type": "boolean", "default": true },
+    "backgroundColor": { "type": "string", "default": "#f5f5f0" },
+    "align": { "type": "string", "default": "full" }
+  },
+  "supports": {
+    "html": false,
+    "align": ["wide", "full"],
+    "spacing": {
+      "padding": true,
+      "margin": true
+    }
+  }
+}

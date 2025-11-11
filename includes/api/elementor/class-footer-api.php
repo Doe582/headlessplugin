@@ -18,28 +18,216 @@ class RESTBridge_Footer_API {
             'permission_callback' => '__return_true',
         ]);
     }
-    public function getFooter($request) {
 
-        $results = [
-            'function' => 'getFooter',
-            'html'     => '',
-            'sections' => []
-        ];
-    
-        // ✅ CASE 1: BLOCK THEMES (Twenty Twenty-Four / FSE)
-        if (wp_is_block_theme()) {
-    
-            // Locate block footer template
-            $footer_files = glob(get_theme_file_path('/parts/*footer*.html'));
-    
-            if ($footer_files && !empty($footer_files)) {
-                $raw = file_get_contents($footer_files[0]);
-                $footer_html = do_blocks($raw);
-    
-                $results['html'] = $footer_html;
+    /**
+     * Cached palette map for slug => color lookup.
+     *
+     * @var array|null
+     */
+    private $footer_palette_cache = null;
+
+    /**
+     * Attempt to locate background color/image for footer blocks similar to header logic.
+     *
+     * @param array $blocks Parsed block array.
+     * @return array|null
+     */
+    private function find_footer_background($blocks) {
+        if (empty($blocks) || !is_array($blocks)) {
+            return null;
+        }
+
+        foreach ($blocks as $block) {
+            if (($block['blockName'] ?? '') === 'core/group') {
+                $attrs = $block['attrs'] ?? [];
+
+                if (!empty($attrs['backgroundColor'])) {
+                    $slug_color = $this->get_color_from_slug($attrs['backgroundColor']);
+                    if ($slug_color) {
+                        return [
+                            'background_color' => $slug_color,
+                            'background_image' => null,
+                        ];
+                    }
+                }
+
+                if (!empty($attrs['style']['color']['background'])) {
+                    $color_value = $this->normalize_color_value($attrs['style']['color']['background']);
+                    return [
+                        'background_color' => $color_value,
+                        'background_image' => null,
+                    ];
+                }
+
+                if (!empty($attrs['style']['background']['backgroundImage'])) {
+                    $image_value = $this->normalize_background_image($attrs['style']['background']['backgroundImage']);
+                    return [
+                        'background_color' => null,
+                        'background_image' => $image_value,
+                    ];
+                }
+            }
+
+            if (!empty($block['innerBlocks'])) {
+                $found = $this->find_footer_background($block['innerBlocks']);
+                if ($found) {
+                    return $found;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Fallback extraction from rendered HTML styles (classic themes or inline styles).
+     *
+     * @param string $html
+     * @return array|null
+     */
+    private function extract_footer_background_from_html($html) {
+        if (empty($html) || !is_string($html)) {
+            return null;
+        }
+
+        $background_color = null;
+        $background_image = null;
+
+        if (preg_match('/background-color\s*:\s*([^;"]+)/i', $html, $color_match)) {
+            $background_color = $this->normalize_color_value(trim($color_match[1]));
+        } elseif (preg_match('/background\s*:\s*([^;]+var\([^)]+\)[^;]*)/i', $html, $color_with_var_match)) {
+            $background_color = $this->normalize_color_value(trim($color_with_var_match[1]));
+        } elseif (preg_match('/has-([a-z0-9-]+)-(?:background|background-color)/i', $html, $class_match)) {
+            $class_color = $this->get_color_from_slug($class_match[1]);
+            if ($class_color) {
+                $background_color = $class_color;
+            }
+        }
+
+        if (preg_match('/background-image\s*:\s*url\(([^)]+)\)/i', $html, $image_match)) {
+            $background_image = $this->normalize_background_image($image_match[1]);
+        } elseif (preg_match('/background\s*:\s*[^;]*url\(([^)]+)\)/i', $html, $bg_match)) {
+            $background_image = $this->normalize_background_image($bg_match[1]);
+        }
+
+        if ($background_color || $background_image) {
+            return [
+                'background_color' => $background_color,
+                'background_image' => $background_image,
+            ];
+        }
+
+        return null;
+    }
+
+public function getFooter($request) {
+
+    $results = [
+            'function'     => 'getFooter',
+            'sections'     => [],
+            'footer_style' => [
+                'background_color' => null,
+                'background_image' => null,
+            ],
+    ];
+
+        // ✅ CASE 1: BLOCK THEMES (FSE template parts + Site Editor customizations)
+        if (function_exists('get_block_template')) {
+            $template_part = get_block_template(get_stylesheet() . '//footer', 'wp_template_part');
+
+            if ($template_part && !empty($template_part->content)) {
+                $resolve_patterns = function(string $raw) use (&$resolve_patterns) : string {
+                    if (!class_exists('WP_Block_Patterns_Registry')) {
+                        return $raw;
+                    }
+                    $registry = WP_Block_Patterns_Registry::get_instance();
+                    $blocks   = parse_blocks($raw);
+
+                    $output = '';
+                    foreach ($blocks as $block) {
+                        if (($block['blockName'] ?? '') === 'core/pattern') {
+                            $slug = $block['attrs']['slug'] ?? '';
+                            $pattern = $slug ? $registry->get_registered($slug) : null;
+                            if (!empty($pattern['content'])) {
+                                $output .= $resolve_patterns($pattern['content']);
+                                continue;
+                            }
+                        }
+                        $output .= serialize_block($block);
+                    }
+
+                    return $output;
+                };
+
+                $resolved_content = $resolve_patterns($template_part->content);
+                $footer_html = do_blocks($resolved_content);
+
                 $results['sections'] = $this->format_footer_to_json_block($footer_html);
-    
-                return new WP_REST_Response($results, 200);
+
+                $blocks = parse_blocks($resolved_content);
+                $style = $this->find_footer_background($blocks);
+                if ($style) {
+                    $results['footer_style']['background_color'] = $style['background_color'] ?? null;
+                    $results['footer_style']['background_image'] = $style['background_image'] ?? null;
+                } else {
+                    $fallback_style = $this->extract_footer_background_from_html($footer_html);
+                    if ($fallback_style) {
+                        $results['footer_style']['background_color'] = $fallback_style['background_color'] ?? null;
+                        $results['footer_style']['background_image'] = $fallback_style['background_image'] ?? null;
+                    }
+                }
+
+        return new WP_REST_Response($results, 200);
+    }
+
+            // If no template part found (rare), fall back to theme files for block themes.
+            if (wp_is_block_theme()) {
+                $footer_files = glob(get_theme_file_path('/parts/*footer*.html'));
+                if ($footer_files && !empty($footer_files)) {
+                    $raw = file_get_contents($footer_files[0]);
+                    $resolve_patterns = function(string $raw) use (&$resolve_patterns) : string {
+                        if (!class_exists('WP_Block_Patterns_Registry')) {
+                            return $raw;
+                        }
+                        $registry = WP_Block_Patterns_Registry::get_instance();
+                        $blocks   = parse_blocks($raw);
+
+                        $output = '';
+                        foreach ($blocks as $block) {
+                            if (($block['blockName'] ?? '') === 'core/pattern') {
+                                $slug = $block['attrs']['slug'] ?? '';
+                                $pattern = $slug ? $registry->get_registered($slug) : null;
+                                if (!empty($pattern['content'])) {
+                                    $output .= $resolve_patterns($pattern['content']);
+                                    continue;
+                                }
+                            }
+                            $output .= serialize_block($block);
+                        }
+
+                        return $output;
+                    };
+
+                    $resolved_content = $resolve_patterns($raw);
+                    $footer_html = do_blocks($resolved_content);
+
+                    $results['sections'] = $this->format_footer_to_json_block($footer_html);
+
+                    $blocks = parse_blocks($resolved_content);
+                    $style = $this->find_footer_background($blocks);
+                    if ($style) {
+                        $results['footer_style']['background_color'] = $style['background_color'] ?? null;
+                        $results['footer_style']['background_image'] = $style['background_image'] ?? null;
+                    } else {
+                        $fallback_style = $this->extract_footer_background_from_html($footer_html);
+                        if ($fallback_style) {
+                            $results['footer_style']['background_color'] = $fallback_style['background_color'] ?? null;
+                            $results['footer_style']['background_image'] = $fallback_style['background_image'] ?? null;
+                        }
+                    }
+
+                    return new WP_REST_Response($results, 200);
+                }
             }
         }
     
@@ -70,10 +258,80 @@ class RESTBridge_Footer_API {
         $footer_html = preg_replace('/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/i', '', $footer_html);
         $footer_html = trim($footer_html);
     
-        $results['html'] = $footer_html;
         $results['sections'] = $this->format_footer_to_json_classic($footer_html);
+
+        $fallback_style = $this->extract_footer_background_from_html($footer_html);
+        if ($fallback_style) {
+            $results['footer_style']['background_color'] = $fallback_style['background_color'] ?? null;
+            $results['footer_style']['background_image'] = $fallback_style['background_image'] ?? null;
+        }
     
         return new WP_REST_Response($results, 200);
+    }
+
+    private function get_color_from_slug($slug) {
+        if (!$slug) {
+            return null;
+        }
+
+        if ($this->footer_palette_cache === null) {
+            $this->footer_palette_cache = [];
+            $settings = wp_get_global_settings();
+
+            $palettes = [];
+            if (!empty($settings['color']['palette']['theme'])) {
+                $palettes[] = $settings['color']['palette']['theme'];
+            }
+            if (!empty($settings['color']['palette']['default'])) {
+                $palettes[] = $settings['color']['palette']['default'];
+            }
+            if (!empty($settings['color']['palette']['custom'])) {
+                $palettes[] = $settings['color']['palette']['custom'];
+            }
+            if (!empty($settings['color']['palette']) && isset($settings['color']['palette'][0])) {
+                $palettes[] = $settings['color']['palette'];
+            }
+
+            foreach ($palettes as $palette_group) {
+                foreach ((array) $palette_group as $item) {
+                    if (!empty($item['slug']) && !empty($item['color'])) {
+                        $this->footer_palette_cache[$item['slug']] = $item['color'];
+                    }
+                }
+            }
+        }
+
+        return $this->footer_palette_cache[$slug] ?? null;
+    }
+
+    private function normalize_color_value($value) {
+        if (!$value) {
+            return null;
+        }
+
+        $value = trim($value, "\"' ");
+        if (preg_match('/var\(--wp--preset--color--([^)]+)\)/i', $value, $preset_match)) {
+            $slug_color = $this->get_color_from_slug($preset_match[1]);
+            if ($slug_color) {
+                return $slug_color;
+            }
+        }
+
+        return $value;
+    }
+
+    private function normalize_background_image($value) {
+        if (!$value) {
+            return null;
+        }
+
+        $value = trim($value);
+        $value = trim($value, "\"' ");
+        if (stripos($value, 'url(') === 0) {
+            $value = trim(substr($value, 4), "\"' )");
+        }
+
+        return $value;
     }
     
     
@@ -81,43 +339,115 @@ class RESTBridge_Footer_API {
        FORMATTER FOR BLOCK THEMES (FSE)
     ---------------------------------------------- */
     private function format_footer_to_json_block($html) {
-    
         $dom = new DOMDocument();
         libxml_use_internal_errors(true);
         $dom->loadHTML($html);
         libxml_clear_errors();
         $xpath = new DOMXPath($dom);
-    
+
         $sections = [];
-    
-        $groups = $xpath->query("//div[contains(@class,'wp-block-group')]");
-    
-        foreach ($groups as $group) {
-            $headingNode = $xpath->query(".//h2|.//h3", $group)->item(0);
-            if (!$headingNode) continue;
-    
-            $heading = trim($headingNode->textContent);
-    
-            $links = [];
-            $linkNodes = $xpath->query(".//a", $group);
-    
-            foreach ($linkNodes as $a) {
-                $text = trim($a->textContent);
-                $url = $a->getAttribute('href');
-    
-                if ($text && $url) {
-                    $links[] = ['title' => $text, 'url' => $url];
-                }
+        $dedupe = [];
+
+        $add_section = function(array $section) use (&$sections, &$dedupe) {
+            $key = md5(wp_json_encode($section));
+            if (!isset($dedupe[$key])) {
+                $dedupe[$key] = true;
+                $sections[] = $section;
             }
-    
-            if (!empty($links)) {
-                $sections[] = [
-                    'heading' => $heading,
-                    'links'   => $links
+        };
+
+        // Capture site title / brand link if present.
+        $siteTitleNodes = $xpath->query("//h1[contains(@class,'wp-block-site-title')] | //h2[contains(@class,'wp-block-site-title')]");
+        if ($siteTitleNodes && $siteTitleNodes->length) {
+            $firstTitle = $siteTitleNodes->item(0);
+            $linkNode = $xpath->query(".//a", $firstTitle)->item(0);
+            $title = trim($firstTitle->textContent);
+            $link = $linkNode ? trim($linkNode->getAttribute('href')) : null;
+
+            if ($title !== '') {
+                $section = [
+                    'type'    => 'site',
+                    'heading' => $title,
                 ];
+
+                if ($link) {
+                    $section['links'] = [
+                        [
+                            'title' => $title,
+                            'url'   => $link,
+                        ],
+                    ];
+                }
+
+                $add_section($section);
             }
         }
-    
+
+        // Capture navigation blocks.
+        $navNodes = $xpath->query("//nav[contains(@class,'wp-block-navigation')]");
+        foreach ($navNodes as $nav) {
+            $links = [];
+            $linkNodes = $xpath->query(".//a", $nav);
+            foreach ($linkNodes as $a) {
+                $text = trim($a->textContent);
+                $url = trim($a->getAttribute('href'));
+                if ($text === '' || $url === '') {
+            continue;
+        }
+                $links[] = [
+                    'title' => $text,
+                    'url'   => $url,
+                ];
+            }
+
+            if (empty($links)) {
+                continue;
+            }
+
+            $heading = $this->find_heading_for_node($nav);
+
+            $section = [
+                'type'    => 'navigation',
+                'heading' => $heading,
+                'links'   => $links,
+            ];
+
+            $add_section($section);
+        }
+
+        // Capture standalone paragraphs or footer text (credits, etc.).
+        $paragraphs = $xpath->query("//p[not(ancestor::nav)]");
+        foreach ($paragraphs as $p) {
+            $text = trim(preg_replace('/\s+/', ' ', $p->textContent));
+            if ($text === '') {
+                continue;
+            }
+
+            $links = [];
+            $linkNodes = $xpath->query(".//a", $p);
+            foreach ($linkNodes as $a) {
+                $linkText = trim($a->textContent);
+                $url = trim($a->getAttribute('href'));
+                if ($linkText && $url) {
+            $links[] = [
+                        'title' => $linkText,
+                        'url'   => $url,
+            ];
+                }
+        }
+
+            $section = [
+                'type' => 'text',
+                'text' => $text,
+            ];
+
+        if (!empty($links)) {
+                $section['links'] = $links;
+            }
+
+            $add_section($section);
+        }
+
         return $sections;
     }
     
@@ -171,9 +501,9 @@ class RESTBridge_Footer_API {
                 $text = trim(strip_tags($dom->saveHTML($p)));
                 if ($text) {
                     $section['contacts'][] = $text;
-                }
-            }
-    
+        }
+    }
+
             $formNode = $xpath->query(".//form", $area)->item(0);
             if ($formNode) {
                 $section['newsletter_form'] = trim($dom->saveHTML($formNode));
@@ -183,6 +513,67 @@ class RESTBridge_Footer_API {
         }
     
         return $sections;
+    }
+    
+    
+    /**
+     * Find the closest heading (h1-h6) relative to a DOM node.
+     */
+    private function find_heading_for_node($node) {
+        if (!$node instanceof DOMNode) {
+            return null;
+        }
+
+        $current = $node;
+
+        while ($current) {
+            $sibling = $current->previousSibling;
+            while ($sibling) {
+                if ($sibling instanceof DOMElement) {
+                    if (preg_match('/^h[1-6]$/i', $sibling->nodeName)) {
+                        return trim($sibling->textContent);
+                    }
+
+                    $heading = $this->find_heading_in_descendants($sibling);
+                    if ($heading) {
+                        return $heading;
+                    }
+                }
+                $sibling = $sibling->previousSibling;
+            }
+
+            if ($current->parentNode instanceof DOMElement) {
+                $current = $current->parentNode;
+                if (preg_match('/^h[1-6]$/i', $current->nodeName)) {
+                    return trim($current->textContent);
+                }
+            } else {
+                $current = null;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Recursively search for heading elements within descendants of a node.
+     */
+    private function find_heading_in_descendants(DOMElement $element) {
+        $child = $element->firstChild;
+        while ($child) {
+            if ($child instanceof DOMElement) {
+                if (preg_match('/^h[1-6]$/i', $child->nodeName)) {
+                    return trim($child->textContent);
+                }
+                $heading = $this->find_heading_in_descendants($child);
+                if ($heading) {
+                    return $heading;
+                }
+            }
+            $child = $child->nextSibling;
+        }
+
+        return null;
     }
     
     
@@ -204,7 +595,7 @@ class RESTBridge_Footer_API {
 
         $results = [
             'function' => 'getFooter',
-            'html'     => ''
+            'sections' => []
         ];
     
         // ✅ CASE 1: Block Theme (Twenty Twenty-Four / etc.)
@@ -212,9 +603,10 @@ class RESTBridge_Footer_API {
             $footer_files = glob(get_theme_file_path('/parts/*footer*.html'));
             if ($footer_files && !empty($footer_files)) {
                 $raw = file_get_contents($footer_files[0]);
-                $results['html'] = do_blocks($raw);
-                return new WP_REST_Response($results, 200);
-            }
+                $footer_html = do_blocks($raw);
+                $results['sections'] = $this->format_footer_to_json($footer_html);
+    return new WP_REST_Response($results, 200);
+}
         }
     
     
@@ -248,11 +640,9 @@ class RESTBridge_Footer_API {
         $clean_footer = preg_replace('/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/i', '', $clean_footer);
         $clean_footer = trim($clean_footer);
     
-        $results['html'] = $clean_footer;
-    
-        $results['sections'] = $this->format_footer_to_json($results['html']);
+        $results['sections'] = $this->format_footer_to_json($clean_footer);
 
-return new WP_REST_Response($results, 200);
+        return new WP_REST_Response($results, 200);
     }
     public function format_footer_to_json($footer_html) {
 
