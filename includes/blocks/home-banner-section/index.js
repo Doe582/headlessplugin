@@ -28,7 +28,7 @@
                 return;
             }
 
-            const { InspectorControls, MediaUpload, MediaUploadCheck, ColorPalette, InnerBlocks } = blockEditor;
+            const { InspectorControls, MediaPlaceholder, MediaReplaceFlow, ColorPalette, InnerBlocks } = blockEditor;
             const { __ } = wp.i18n;
 
             const DEFAULT_COLORS = [
@@ -42,18 +42,24 @@
                 ['core/heading', {
                     level: 1,
                     content: __('Discover Your Ideal Fusion Of Our Classic and Contemporary Styles', 'restbridge'),
-                    placeholder: __('Discover your hero headline…', 'restbridge')
+                    placeholder: __('Discover your hero headline…', 'restbridge'),
+                    lock: { remove: true, move: false }
                 }],
                 ['core/paragraph', {
                     content: __('Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry\'s standard dummy text ever since the 1500s, when an unknown.', 'restbridge'),
-                    placeholder: __('Add supporting description…', 'restbridge')
+                    placeholder: __('Add supporting description…', 'restbridge'),
+                    lock: { remove: true, move: false }
                 }],
-                ['core/buttons', {}, [
+                ['core/buttons', {
+                    className: 'restbridge-home-banner-buttons',
+                    lock: { remove: true, move: false }
+                }, [
                     ['core/button', {
                         text: __('SHOP NOW', 'restbridge'),
                         url: '#',
                         className: 'restbridge-home-banner-button-inner',
-                        placeholder: __('SHOP NOW', 'restbridge')
+                        placeholder: __('SHOP NOW', 'restbridge'),
+                        lock: { remove: true, move: false }
                     }]
                 ]]
             ];
@@ -79,7 +85,13 @@
                 edit: function (props) {
                     try {
                         const { attributes = {}, setAttributes } = props || {};
-                        const { imageId = 0, imageUrl = '', discountPercent = '70', showDiscountBadge = true, backgroundColor = '#f5f5f0' } = attributes;
+                        const {
+                            imageId = 0,
+                            imageUrl = '',
+                            discountPercent = '70',
+                            showDiscountBadge = true,
+                            backgroundColor = '#f5f5f0'
+                        } = attributes;
 
                         const onSelectImage = (media) => {
                             if (media && setAttributes) {
@@ -110,31 +122,6 @@
                                         checked: showDiscountBadge,
                                         onChange: (value) => setAttributes({ showDiscountBadge: value })
                                     }),
-                                    el('div', { className: 'restbridge-home-banner-image-upload' },
-                                        el('label', { className: 'components-base-control__label' }, __('Banner Image', 'restbridge')),
-                                        el(MediaUploadCheck, {},
-                                            el(MediaUpload, {
-                                                onSelect: onSelectImage,
-                                                allowedTypes: ['image'],
-                                                value: imageId,
-                                                render: ({ open }) => el('div', { className: 'restbridge-home-banner-image-controls' },
-                                                    imageUrl && el('div', { className: 'restbridge-home-banner-image-preview' },
-                                                        el('img', { src: imageUrl, alt: __('Banner image', 'restbridge'), className: 'restbridge-home-banner-image' }),
-                                                        el(Button, {
-                                                            variant: 'destructive',
-                                                            onClick: onRemoveImage,
-                                                            className: 'restbridge-home-banner-remove-image'
-                                                        }, __('Remove Image', 'restbridge'))
-                                                    ),
-                                                    !imageUrl && el(Button, {
-                                                        onClick: open,
-                                                        variant: 'primary',
-                                                        className: 'restbridge-home-banner-select-image'
-                                                    }, __('Select Image', 'restbridge'))
-                                                )
-                                            })
-                                        )
-                                    )
                                 ),
                                 el(PanelBody, { title: __('Background', 'restbridge'), initialOpen: false },
                                     el(ColorPalette, {
@@ -142,7 +129,7 @@
                                         value: backgroundColor,
                                         onChange: (value) => setAttributes({ backgroundColor: value || '#f5f5f0' })
                                     })
-                                )
+                                ),
                             ),
                             el('div', {
                                 className: 'restbridge-home-banner-preview',
@@ -151,21 +138,62 @@
                                 el('div', { className: 'restbridge-home-banner-container' },
                                     el('div', { className: 'restbridge-home-banner-content' },
                                         el('div', { className: 'restbridge-home-banner-text' },
-                                            el(InnerBlocks, {
-                                                template: TEMPLATE,
-                                                templateLock: 'all'
-                                            })
+                                            el('div', { className: 'restbridge-home-banner-text-content' },
+                                                el(InnerBlocks, {
+                                                    template: TEMPLATE,
+                                                    templateLock: false,
+                                                    allowedBlocks: ['core/heading', 'core/paragraph', 'core/buttons'],
+                                                    __experimentalCaptureToolbars: true
+                                                })
+                                            )
                                         )
                                     ),
                                     el('div', { className: 'restbridge-home-banner-image-wrapper' },
                                         imageUrl ? el('div', { className: 'restbridge-home-banner-image-frame' },
                                             el('img', { src: imageUrl, alt: __('Banner image', 'restbridge'), className: 'restbridge-home-banner-image' }),
+                                            el(MediaReplaceFlow, {
+                                                mediaId: imageId,
+                                                mediaURL: imageUrl,
+                                                allowedTypes: ['image'],
+                                                accept: 'image/*',
+                                                name: __('Replace image', 'restbridge'),
+                                                onSelect: onSelectImage,
+                                                onSelectURL: (url) => {
+                                                    if (setAttributes) {
+                                                        setAttributes({ imageId: 0, imageUrl: url || '' });
+                                                    }
+                                                }
+                                            }),
+                                            el(Button, {
+                                                variant: 'tertiary',
+                                                size: 'small',
+                                                className: 'restbridge-home-banner-remove-image-overlay',
+                                                onClick: (event) => {
+                                                    event.preventDefault();
+                                                    event.stopPropagation();
+                                                    onRemoveImage();
+                                                }
+                                            }, __('Remove', 'restbridge')),
                                             showDiscountBadge && discountPercent && el('div', { className: 'restbridge-home-banner-discount-badge' },
                                                 el('span', { className: 'restbridge-home-banner-discount-percent' }, discountPercent + '%'),
                                                 el('span', { className: 'restbridge-home-banner-discount-text' }, __('OFF', 'restbridge'))
                                             )
                                         ) : el('div', { className: 'restbridge-home-banner-image-placeholder' },
-                                            __('Select an image from the sidebar panel', 'restbridge')
+                                            el(MediaPlaceholder, {
+                                                icon: 'format-image',
+                                                labels: {
+                                                    title: __('Banner image', 'restbridge'),
+                                                    instructions: __('Select or upload an image for the banner.', 'restbridge')
+                                                },
+                                                onSelect: onSelectImage,
+                                                onSelectURL: (url) => {
+                                                    if (setAttributes) {
+                                                        setAttributes({ imageId: 0, imageUrl: url || '' });
+                                                    }
+                                                },
+                                                allowedTypes: ['image'],
+                                                accept: 'image/*'
+                                            })
                                         )
                                     )
                                 )
@@ -179,7 +207,7 @@
                     }
                 },
                 save: function () {
-                    return null;
+                    return el(InnerBlocks.Content, null);
                 }
             });
         } catch (error) {

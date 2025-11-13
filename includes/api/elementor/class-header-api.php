@@ -33,7 +33,7 @@ class RESTBridge_Header_API {
             if (($block['blockName'] ?? '') === 'core/group') {
     
                 $attrs = $block['attrs'] ?? [];
-    
+        
                 // ✅ CASE 1: palette-based color like "accent-1"
                 if (!empty($attrs['backgroundColor'])) {
                     $slug = $attrs['backgroundColor'];
@@ -101,36 +101,169 @@ class RESTBridge_Header_API {
         }
     }
     
+    /**
+     * Retrieve the navigation menu assigned to the primary header location.
+     *
+     * @return array
+     */
+    private function get_primary_menu_items(): array {
+        if (!function_exists('get_nav_menu_locations') || !function_exists('wp_get_nav_menu_items')) {
+            return [];
+        }
+
+        $locations = get_nav_menu_locations();
+        if (empty($locations) || !is_array($locations)) {
+            return [];
+        }
+
+        $preferred_locations = ['primary', 'menu-1', 'header', 'top'];
+        $menu_id = null;
+
+        foreach ($preferred_locations as $location) {
+            if (!empty($locations[$location])) {
+                $menu_id = (int) $locations[$location];
+                break;
+            }
+        }
+
+        if (!$menu_id) {
+            $first = reset($locations);
+            if ($first) {
+                $menu_id = (int) $first;
+            }
+        }
+
+        if (!$menu_id) {
+            return [];
+        }
+
+        $menu_items = wp_get_nav_menu_items($menu_id, ['update_post_term_cache' => false]);
+        if (empty($menu_items)) {
+            return [];
+        }
+
+        usort($menu_items, static function ($a, $b) {
+            return ($a->menu_order ?? 0) <=> ($b->menu_order ?? 0);
+        });
+
+        return $this->build_menu_tree($menu_items);
+    }
+
+    /**
+     * Construct a hierarchical menu tree from nav menu items.
+     *
+     * @param array $items
+     * @return array
+     */
+    private function build_menu_tree(array $items): array {
+        $nodes = [];
+        $parents = [];
+        $charset = get_bloginfo('charset') ?: 'UTF-8';
+
+        foreach ($items as $item) {
+            $classes = [];
+            if (!empty($item->classes)) {
+                $classes = is_array($item->classes) ? array_filter($item->classes) : array_filter(explode(' ', (string) $item->classes));
+            }
+
+            $nodes[$item->ID] = [
+                'id'          => (int) $item->ID,
+                'title'       => html_entity_decode($item->title ?? '', ENT_QUOTES, $charset),
+                'url'         => $item->url ?? '',
+                'target'      => $item->target ?: '_self',
+                'type'        => $item->type_label ?? $item->type ?? 'custom',
+                'description' => $item->description ?? '',
+                'rel'         => $item->xfn ?? '',
+                'classes'     => array_values($classes),
+                'children'    => [],
+            ];
+
+            $parents[$item->ID] = (int) ($item->menu_item_parent ?? 0);
+        }
+
+        $tree = [];
+        foreach ($nodes as $id => &$node) {
+            $parent_id = $parents[$id] ?? 0;
+            if ($parent_id > 0 && isset($nodes[$parent_id])) {
+                $nodes[$parent_id]['children'][] =& $node;
+            } else {
+                $tree[] =& $node;
+            }
+        }
+        unset($node);
+
+        return array_map([$this, 'normalize_menu_node'], $tree);
+    }
+
+    /**
+     * Cleanup a menu node recursively (remove empty values, normalise children).
+     *
+     * @param array $node
+     * @return array
+     */
+    private function normalize_menu_node(array $node): array {
+        if (!empty($node['children'])) {
+            $node['children'] = array_map([$this, 'normalize_menu_node'], $node['children']);
+        } else {
+            unset($node['children']);
+        }
+
+        if (empty($node['classes'])) {
+            unset($node['classes']);
+        }
+
+        if (empty($node['description'])) {
+            unset($node['description']);
+        }
+
+        if (empty($node['rel'])) {
+            unset($node['rel']);
+        }
+
+        return $node;
+    }
+
 
     public function get_header($request) {
+        $theme_options = function_exists('styluza_get_all_header_options')
+            ? styluza_get_all_header_options()
+            : [
+                'logo'          => null,
+                'shipping_text' => '',
+                'social_links'  => [
+                    'facebook'  => '',
+                    'instagram' => '',
+                    'youtube'   => '',
+                ],
+            ];
+
+        if (!isset($theme_options['social_links']) || !is_array($theme_options['social_links'])) {
+            $theme_options['social_links'] = [
+                'facebook'  => '',
+                'instagram' => '',
+                'youtube'   => '',
+            ];
+        }
+
         $results = [
             'site_title'    => get_bloginfo('name'),
             'logo'          => null,
             'menu'          => [],
             'cart'          => null,
             'account'       => null,
-            'theme_options' => [
-                'logo'          => null,
-                'shipping_text' => null,
-                'social_links'  => [
-                    'facebook'  => null,
-                    'instagram' => null,
-                    'youtube'   => null,
-                ],
-            ],
+            'theme_options' => $theme_options,
         ];
+        
 
         // Logo
         if ($logo_id = get_theme_mod('custom_logo')) {
             $results['logo'] = wp_get_attachment_image_url($logo_id, 'full');
         }
-        $theme_logo = function_exists('styluza_get_header_option')
-            ? styluza_get_header_option('logo', '')
-            : get_theme_mod('styluza_header_logo', '');
+        $theme_logo = get_theme_mod('styluza_header_logo', '');
 
         if ($theme_logo !== '' && $theme_logo !== null) {
             $resolved_logo = null;
-            if (is_numeric($theme_logo)) {
+            if (is_numeric($theme_logo) && (int) $theme_logo > 0) {
                 $resolved_logo = wp_get_attachment_image_url((int) $theme_logo, 'full');
             } elseif (is_string($theme_logo) && filter_var($theme_logo, FILTER_VALIDATE_URL)) {
                 $resolved_logo = esc_url_raw($theme_logo);
@@ -140,22 +273,21 @@ class RESTBridge_Header_API {
                 $results['logo'] = $resolved_logo;
                 $results['theme_options']['logo'] = $resolved_logo;
             } else {
-                $results['theme_options']['logo'] = esc_url_raw($theme_logo);
+                $maybe_url = is_string($theme_logo) ? esc_url_raw($theme_logo) : '';
+                if (!empty($maybe_url) && filter_var($maybe_url, FILTER_VALIDATE_URL)) {
+                    $results['theme_options']['logo'] = $maybe_url;
+                } elseif (!empty($results['logo'])) {
+                    $results['theme_options']['logo'] = $results['logo'];
+                } else {
+                    $results['theme_options']['logo'] = null;
+                }
             }
-        } else {
+        } elseif (empty($results['theme_options']['logo'])) {
             $results['theme_options']['logo'] = $results['logo'];
         }
 
-        $shipping_text_default = __( 'FREE shipping on US$39.00+', 'twentytwentyfive-child' );
-        $shipping_text = function_exists('styluza_get_header_option')
-            ? styluza_get_header_option('shipping_text', $shipping_text_default)
-            : get_theme_mod('styluza_header_shipping_text', $shipping_text_default);
-
-        if ($shipping_text !== null && $shipping_text !== '') {
-            $results['theme_options']['shipping_text'] = wp_kses_post($shipping_text);
-        } else {
-            $results['theme_options']['shipping_text'] = wp_kses_post($shipping_text_default);
-        }
+        $shipping_text = get_theme_mod('styluza_header_shipping_text', '');
+        $results['theme_options']['shipping_text'] = wp_kses_post($shipping_text);
 
         $social_keys = [
             'facebook'  => 'styluza_header_social_facebook',
@@ -164,17 +296,14 @@ class RESTBridge_Header_API {
         ];
 
         foreach ($social_keys as $network => $theme_mod_key) {
-            $social_value = function_exists('styluza_get_header_option')
-                ? styluza_get_header_option($network, '')
-                : get_theme_mod($theme_mod_key, '');
-
-            if ($social_value !== null && $social_value !== '') {
-                $results['theme_options']['social_links'][$network] = esc_url_raw($social_value);
-            } else {
-                $results['theme_options']['social_links'][$network] = '';
-            }
+            $social_value = get_theme_mod($theme_mod_key, '');
+            $results['theme_options']['social_links'][$network] = $social_value ? esc_url_raw($social_value) : '';
         }
 
+        $primary_menu = $this->get_primary_menu_items();
+        if (!empty($primary_menu)) {
+            $results['menu'] = $primary_menu;
+        }
 
         // Load header block template
         if (!function_exists('get_block_template')) {
@@ -185,7 +314,7 @@ class RESTBridge_Header_API {
         if (!$template_part || empty($template_part->content)) {
             return new WP_REST_Response($results, 200);
         }
-
+        
         // Resolve patterns
         $resolve_patterns = function(string $raw) use (&$resolve_patterns) : string {
             if (!class_exists('WP_Block_Patterns_Registry')) return $raw;
@@ -199,8 +328,8 @@ class RESTBridge_Header_API {
                     $pat  = $slug ? $registry->get_registered($slug) : null;
                     if (!empty($pat['content'])) {
                         $out .= $resolve_patterns($pat['content']);
-                        continue;
-                    }
+                continue;
+            }
                 }
                 $out .= serialize_block($b);
             }
@@ -217,8 +346,8 @@ class RESTBridge_Header_API {
             'background_image' => $style['background_image'] ?? null,
         ];
         
-        // Extract menu links (clean format)
-        if (preg_match_all('/<a[^>]+href="([^"]+)"[^>]*>(.*?)<\/a>/is', $rendered_html, $matches, PREG_SET_ORDER)) {
+        // Extract menu links (clean format) - fallback if no primary menu resolved
+        if (empty($results['menu']) && preg_match_all('/<a[^>]+href="([^"]+)"[^>]*>(.*?)<\/a>/is', $rendered_html, $matches, PREG_SET_ORDER)) {
             foreach ($matches as $a) {
                 $title = trim(wp_strip_all_tags($a[2], true));
                 // Skip empty titles (icons) and duplicates
@@ -229,8 +358,8 @@ class RESTBridge_Header_API {
                     foreach ($results['menu'] as $menu_item) {
                         if ($menu_item['url'] === $url) {
                             $exists = true;
-                            break;
-                        }
+                break;
+            }
                     }
                     if (!$exists) {
                         $results['menu'][] = [
@@ -272,14 +401,14 @@ class RESTBridge_Header_API {
                 if (preg_match('/\b(cart|basket|bag|checkout|shopping)\b/', $class_string)) {
                     $matches_cart = true;
                 }
-            }
-
+                        }
+                        
             if (!$matches_cart && is_string($icon_key)) {
                 if (preg_match('/\b(cart|basket|bag|checkout|shopping)\b/i', $icon_key)) {
                     $matches_cart = true;
-                }
             }
-
+        }
+        
             if (!$matches_cart && !empty($icon['svg']) && stripos($icon['svg'], 'wc-block-mini-cart__icon') !== false) {
                 $matches_cart = true;
             }
@@ -288,7 +417,7 @@ class RESTBridge_Header_API {
                 $cart_icon = $icon;
                 $cart_url = $icon['url'] ?? null;
                 break;
-            }
+        }
         }
         if (!$cart_icon) {
             foreach ($icons as $icon_key => $icon) {
@@ -411,19 +540,58 @@ class RESTBridge_Header_API {
 
         if ($cart_count <= 0 && !empty($persistent_cart_items)) {
             $cart_count = $this->count_cart_items_from_session($persistent_cart_items);
-        }
-
+                    }
+                    
         // Fallback cart URL
         if (!$cart_url && function_exists('wc_get_cart_url')) {
             $cart_url = wc_get_cart_url();
         }
-        
+
+        $cart_totals = [
+            'subtotal' => null,
+            'total'    => null,
+            'currency' => function_exists('get_woocommerce_currency') ? get_woocommerce_currency() : null,
+            'formatted' => [
+                'subtotal' => null,
+                'total'    => null,
+            ],
+        ];
+
+        if (function_exists('WC')) {
+            $wc = WC();
+            if ($wc && $wc->cart) {
+                if (method_exists($wc->cart, 'get_subtotal')) {
+                    $cart_totals['subtotal'] = (float) $wc->cart->get_subtotal();
+                    if (function_exists('wc_price')) {
+                        $cart_totals['formatted']['subtotal'] = wc_price($cart_totals['subtotal']);
+                    }
+                }
+
+                if (method_exists($wc->cart, 'get_total')) {
+                    $raw_total = $wc->cart->get_total('edit');
+                    if (is_numeric($raw_total)) {
+                        $cart_totals['total'] = (float) $raw_total;
+                        if (function_exists('wc_price')) {
+                            $cart_totals['formatted']['total'] = wc_price($cart_totals['total']);
+                        }
+                    } else {
+                        $cart_totals['formatted']['total'] = $wc->cart->get_total();
+                    }
+                }
+
+                if (empty($cart_totals['formatted']['total']) && $cart_totals['total'] !== null && function_exists('wc_price')) {
+                    $cart_totals['formatted']['total'] = wc_price($cart_totals['total']);
+                }
+            }
+        }
+
         $cart_svg = $cart_icon['svg'] ?? null;
 
         $results['cart'] = [
-            'svg'   => $cart_svg,
-            'count' => $cart_count,
-            'url'   => $cart_url,
+            'svg'     => $cart_svg,
+            'count'   => $cart_count,
+            'url'     => $cart_url,
+            'totals'  => $cart_totals,
         ];
 
         // Find account icon dynamically (by URL pattern)
@@ -451,7 +619,7 @@ class RESTBridge_Header_API {
                 $class_string = strtolower(implode(' ', (array) $icon['parent_classes']));
                 if (preg_match('/\b(account|customer|user|login|profile)\b/', $class_string)) {
                     $matches_account = true;
-                }
+                    } 
             }
 
             if (!$matches_account && is_string($icon_key)) {
@@ -464,8 +632,8 @@ class RESTBridge_Header_API {
                 $account_icon = $icon;
                 $account_url = $icon['url'] ?? null;
                 break;
-            }
-        }
+                        }
+                    }
         
         // Fallback account URL
         $my_account_page = function_exists('wc_get_page_permalink') ? wc_get_page_permalink('myaccount') : null;
@@ -498,8 +666,8 @@ class RESTBridge_Header_API {
         
         if (empty($svg_matches[0])) {
             return $icons;
-        }
-        
+                }
+                
         foreach ($svg_matches[0] as $match) {
             $svg_html = $match[0];
             $svg_pos = $match[1];
@@ -512,7 +680,7 @@ class RESTBridge_Header_API {
             $icon_type = null;
             $icon_url = null;
             $icon_title = null;
-            
+        
             // Step 1: Extract URL from nearby link (most reliable identifier)
             if (preg_match('/<a[^>]*href=["\']([^"\']+)["\'][^>]*>.*?' . preg_quote($svg_html, '/') . '.*?<\/a>/is', $html, $link_match)) {
                 $icon_url = $link_match[1];
@@ -583,10 +751,10 @@ class RESTBridge_Header_API {
             foreach ($icons as $existing_icon) {
                 if (isset($existing_icon['svg_hash']) && $existing_icon['svg_hash'] === $svg_hash) {
                     $is_duplicate = true;
-                    break;
-                }
+                        break;
             }
-            
+        }
+        
             if (!$is_duplicate) {
                 $icon_data = [
                     'svg' => $svg_html,
@@ -596,8 +764,8 @@ class RESTBridge_Header_API {
                     'parent_classes' => $parent_classes,
                     'parent_id' => $parent_id,
                     'parent_data' => $parent_data_attrs,
-                ];
-                
+            ];
+        
                 // Use dynamic key (from URL, title, or position)
                 $icons[$key] = $icon_data;
             }
@@ -642,7 +810,7 @@ class RESTBridge_Header_API {
 
         if (!function_exists('WC') || !WC()->cart) {
             return;
-        }
+                }
 
         foreach ($cart_items as $cart_item) {
             $product_id   = isset($cart_item['product_id']) ? intval($cart_item['product_id']) : 0;
@@ -667,8 +835,8 @@ class RESTBridge_Header_API {
 
         if (method_exists(WC()->cart, 'calculate_totals')) {
             WC()->cart->calculate_totals();
-        }
     }
+}
 
 }
 

@@ -701,8 +701,101 @@ trait RESTBridge_Content_Parser {
             $block_data['identifier'] = $identifier;
         }
 
-        // Parse nested blocks (nested blocks don't get position numbers, they're part of parent)
-        if (!empty($inner_blocks)) {
+        $block_content = $block_data['content'];
+
+        // Simple blocks that should return only content
+        $simple_blocks = [
+            'paragraph',
+            'heading',
+            'list',
+            'quote',
+            'image',
+            'separator',
+            'spacer',
+            'code',
+            'preformatted',
+            'pullquote',
+            'verse',
+            'table',
+            'button',
+            'html',
+            'shortcode',
+        ];
+
+        // Complex blocks that need metadata
+        $complex_blocks = [
+            'query',
+            'home-banner-section',
+            'columns',
+            'group',
+            'cover',
+            'media-text',
+            'gallery',
+            'audio',
+            'video',
+            'file',
+        ];
+
+        // For simple blocks, return only content
+        if (in_array($block_type, $simple_blocks, true)) {
+            return $block_content;
+        }
+
+        // Handle query block separately (already processed content)
+        if ($block_type === 'query' || $block_type === 'product-collection') {
+            return [
+                'type' => $block_type,
+                'content' => $this->extract_query_block_content($block, $attrs),
+            ];
+        }
+
+        // Handle home-banner-section with specific structure
+        if ($block_type === 'home-banner-section') {
+            $allowed_keys = [
+                'index',
+                'block_number',
+                'position',
+                'type',
+                'block_name',
+                'attributes',
+            ];
+
+            $simplified = array_intersect_key($block_data, array_flip($allowed_keys));
+            if (!empty($block_content)) {
+                $simplified['content'] = $block_content;
+            }
+
+            return $simplified;
+        }
+
+        // Special handling for columns blocks - group blocks by column with CSS classes (handles nested columns)
+        if ($block_type === 'columns') {
+            // Extract className from the columns block itself (not just from column blocks)
+            $columns_css_class = $this->extract_column_css_class($block, $attrs);
+            
+            // Parse the columns block structure
+            $columns_data = $this->parse_columns_block($inner_blocks);
+            
+            // Rebuild the array with className first, then blocks (for proper JSON order)
+            $result = [
+                'type' => $columns_data['type'],
+            ];
+            
+            // Add className first if it exists (main/parent className)
+            if (!empty($columns_css_class)) {
+                $result['className'] = $columns_css_class;
+            }
+            
+            // Add blocks after className
+            $result['blocks'] = $columns_data['blocks'];
+            
+            return $result;
+        }
+
+        // For complex blocks, keep structure but remove unnecessary fields
+        $should_include_children = empty($block_content) || !in_array($block_type, ['home-banner-section'], true);
+
+        if ($should_include_children && !empty($inner_blocks)) {
             $block_data['blocks'] = [];
             foreach ($inner_blocks as $inner_index => $inner_block) {
                 $parsed_inner = $this->parse_gutenberg_block($inner_block, $inner_index, null); // null = nested, no position
@@ -710,10 +803,204 @@ trait RESTBridge_Content_Parser {
                     $block_data['blocks'][] = $parsed_inner;
                 }
             }
+            if (!empty($block_data['blocks'])) {
             $block_data['total_blocks'] = count($block_data['blocks']);
+            } else {
+                unset($block_data['blocks']);
+            }
+        } else {
+            unset($block_data['blocks'], $block_data['total_blocks']);
         }
 
-        return $block_data;
+        // Remove all unnecessary metadata fields
+        unset(
+            $block_data['index'],
+            $block_data['block_number'],
+            $block_data['position'],
+            $block_data['block_name'],
+            $block_data['attributes'],
+            $block_data['raw_content'],
+            $block_data['identifier']
+        );
+
+        // Keep only type and content (and blocks if present)
+        $simplified = [
+            'type' => $block_data['type'],
+        ];
+
+        // Only add content if it's not empty after cleanup
+        $cleaned_content = $this->clean_block_content($block_data['content']);
+        if (!empty($cleaned_content)) {
+            $simplified['content'] = $cleaned_content;
+        }
+
+        if (isset($block_data['blocks'])) {
+            $simplified['blocks'] = $block_data['blocks'];
+        }
+
+        // Don't include total_blocks - it's redundant
+        return $simplified;
+    }
+
+    /**
+     * Parse columns block recursively (handles nested columns)
+     * This extracts CSS classes from both outer (main) columns and inner (nested) columns
+     */
+    protected function parse_columns_block($inner_blocks) {
+        $columns_data = [];
+        
+        // Ensure we have an array to work with
+        if (empty($inner_blocks)) {
+            $inner_blocks = [];
+        }
+        
+        if (!is_array($inner_blocks)) {
+            return [
+                'type' => 'columns',
+                'blocks' => [],
+            ];
+        }
+        
+        // Debug: Log total columns count (temporary - enable to debug)
+        // error_log('parse_columns_block - Total columns to process: ' . count($inner_blocks));
+        
+        // Process ALL inner blocks - each should be a column block
+        // WordPress columns block contains column blocks as innerBlocks
+        foreach ($inner_blocks as $inner_index => $inner_block) {
+            // Only skip if block is completely invalid (null, false, etc.)
+            // Don't skip if it's an empty array - that might be a valid empty column
+            if ($inner_block === null || $inner_block === false) {
+                continue;
+            }
+            
+            // Ensure it's an array
+            if (!is_array($inner_block)) {
+                continue;
+            }
+            
+            // Each inner block should be a column block (core/column)
+            // But we'll process it anyway to be safe
+            $column_block_name = $inner_block['blockName'] ?? '';
+            
+            // This is a column block - extract its CSS class
+            $column_attrs = $inner_block['attrs'] ?? [];
+            
+            // Extract CSS class from the outer/main column
+            // Additional CSS class(es) is stored in attrs['className']
+            $column_css_class = $this->extract_column_css_class($inner_block, $column_attrs);
+            
+            // Debug: Log column className extraction (temporary - enable to debug)
+            // error_log('Column #' . ($inner_index + 1) . ' - blockName: ' . $column_block_name . ', className: "' . $column_css_class . '", attrs keys: ' . implode(', ', array_keys($column_attrs)));
+            
+            // Recursively parse inner blocks (this handles nested columns)
+            // If there's a nested columns block inside, it will be processed recursively
+            // and its inner columns will have their CSS classes extracted too
+            $column_inner_blocks = $inner_block['innerBlocks'] ?? [];
+            $column_blocks = [];
+            
+            // Process inner blocks of this column
+            if (is_array($column_inner_blocks) && !empty($column_inner_blocks)) {
+                foreach ($column_inner_blocks as $column_inner_index => $column_inner_block) {
+                    // Recursively parse - if this is a nested columns block, 
+                    // parse_columns_block will be called again to extract inner column classes
+                    if (is_array($column_inner_block)) {
+                        $parsed_inner = $this->parse_gutenberg_block($column_inner_block, $column_inner_index, null);
+                        if ($parsed_inner) {
+                            $column_blocks[] = $parsed_inner;
+                        }
+                    }
+                }
+            }
+            
+            // Build column data with CSS class (from outer/main column) and blocks
+            // Always include the column, even if it's completely empty
+            $column_data = [];
+            if (!empty($column_css_class)) {
+                $column_data['className'] = $column_css_class;
+            }
+            $column_data['blocks'] = $column_blocks;
+            
+            // Always add the column to the array (even if empty)
+            // This ensures ALL columns are included in the response
+            $columns_data[] = $column_data;
+        }
+        
+        // Return simplified columns block with columns grouped and CSS classes included
+        // Structure: outer column className -> nested columns -> inner column className
+        return [
+            'type' => 'columns',
+            'blocks' => $columns_data,
+        ];
+    }
+
+    /**
+     * Extract CSS class from a column block
+     * Works for both outer (main) columns and inner (nested) columns
+     */
+    protected function extract_column_css_class($column_block, $column_attrs) {
+        $column_css_class = '';
+        
+        // Method 1: Check attrs['className'] (primary location for "Additional CSS class(es)")
+        // Check both isset and if it's not empty string
+        if (isset($column_attrs['className'])) {
+            $temp_class = trim($column_attrs['className']);
+            if (!empty($temp_class)) {
+                $column_css_class = $temp_class;
+            }
+        }
+        
+        // Method 2: Check attrs['class'] (alternative location)
+        if (empty($column_css_class) && isset($column_attrs['class'])) {
+            $temp_class = trim($column_attrs['class']);
+            if (!empty($temp_class)) {
+                $column_css_class = $temp_class;
+            }
+        }
+        
+        // Method 1.5: Also check if className is in the block itself (not just attrs)
+        if (empty($column_css_class) && is_array($column_block) && isset($column_block['attrs']['className'])) {
+            $temp_class = trim($column_block['attrs']['className']);
+            if (!empty($temp_class)) {
+                $column_css_class = $temp_class;
+            }
+        }
+        
+        // Method 3: Extract from innerHTML if className is in the HTML
+        if (empty($column_css_class) && !empty($column_block['innerHTML'])) {
+            $inner_html = $column_block['innerHTML'];
+            // Look for class attribute in the opening div tag
+            if (preg_match('/<div[^>]*class=["\']([^"\']*)["\'][^>]*>/', $inner_html, $matches)) {
+                $all_classes = $matches[1];
+                $class_array = preg_split('/\s+/', trim($all_classes));
+                // Filter out default WordPress classes, keep only custom ones
+                // Filter: wp-block-column, wp-block-columns, has-*-*-*, is-layout-*, wp-container-*
+                $custom_classes = array_filter($class_array, function($class) {
+                    return !preg_match('/^(wp-block-column|wp-block-columns|has-\w+-\w+-\w+|is-layout-|wp-container-)/', $class) && !empty($class);
+                });
+                if (!empty($custom_classes)) {
+                    $column_css_class = implode(' ', $custom_classes);
+                }
+            }
+        }
+        
+        // Method 4: Try to extract from rendered HTML (fallback)
+        if (empty($column_css_class) && $column_block && function_exists('render_block')) {
+            $rendered = render_block($column_block);
+            if (!empty($rendered) && preg_match('/<div[^>]*class=["\']([^"\']*)["\'][^>]*>/', $rendered, $matches)) {
+                $all_classes = $matches[1];
+                $class_array = preg_split('/\s+/', trim($all_classes));
+                // Filter out default WordPress classes, keep only custom ones
+                // Filter: wp-block-column, wp-block-columns, has-*-*-*, is-layout-*, wp-container-*
+                $custom_classes = array_filter($class_array, function($class) {
+                    return !preg_match('/^(wp-block-column|wp-block-columns|has-\w+-\w+-\w+|is-layout-|wp-container-)/', $class) && !empty($class);
+                });
+                if (!empty($custom_classes)) {
+                    $column_css_class = implode(' ', $custom_classes);
+                }
+            }
+        }
+        
+        return $column_css_class;
     }
 
     /**
@@ -818,6 +1105,10 @@ trait RESTBridge_Content_Parser {
     protected function extract_gutenberg_block_content($block_type, $attrs, $inner_html, $block = null) {
         $content = [];
 
+        if ($block_type === 'query') {
+            return $this->extract_query_block_content($block, $attrs);
+        }
+
         // For dynamic blocks, render them to get actual content
         $dynamic_blocks = ['categories', 'calendar', 'archives', 'page-list', 'latest-comments', 'latest-posts', 'tag-cloud', 'rss', 'search', 'social-links', 'navigation'];
         
@@ -841,9 +1132,7 @@ trait RESTBridge_Content_Parser {
                 $heading_text = trim($heading_text);
                 
                 $content = [
-                    'text' => $heading_text,
-                    'level' => isset($attrs['level']) ? $attrs['level'] : 2,
-                    'align' => isset($attrs['align']) ? $attrs['align'] : '',
+                    'title' => $heading_text,
                 ];
                 break;
 
@@ -856,9 +1145,7 @@ trait RESTBridge_Content_Parser {
                 $para_text = trim($para_text);
                 
                 $content = [
-                    'text' => $para_text,
-                    'align' => isset($attrs['align']) ? $attrs['align'] : '',
-                    'dropCap' => isset($attrs['dropCap']) ? $attrs['dropCap'] : false,
+                    'description' => $para_text,
                 ];
                 break;
 
@@ -1008,7 +1295,7 @@ trait RESTBridge_Content_Parser {
                 break;
 
             case 'home-banner-section':
-                $image_id = isset($attrs['imageId']) ? intval($attrs['imageId']) : 0;
+                $image_id = isset($attrs['imageId']) ? (int) $attrs['imageId'] : 0;
                 $image_url = isset($attrs['imageUrl']) ? $attrs['imageUrl'] : '';
                 if ($image_id > 0 && empty($image_url)) {
                     $image_url = wp_get_attachment_image_url($image_id, 'full');
@@ -1022,35 +1309,55 @@ trait RESTBridge_Content_Parser {
                 $inner_blocks_data = $block['innerBlocks'] ?? [];
                 foreach ($inner_blocks_data as $inner) {
                     $inner_name = $inner['blockName'] ?? '';
+
                     if ($inner_name === 'core/heading') {
-                        $title_value = $inner['attrs']['content'] ?? ($inner['innerHTML'] ?? '');
+                        $raw = $inner['attrs']['content'] ?? ($inner['innerHTML'] ?? '');
+                        if ($raw !== '') {
+                            $title_value = wp_strip_all_tags($raw);
+                        }
                     } elseif ($inner_name === 'core/paragraph') {
-                        $description_value = $inner['attrs']['content'] ?? ($inner['innerHTML'] ?? '');
+                        $raw = $inner['attrs']['content'] ?? ($inner['innerHTML'] ?? '');
+                        if ($raw !== '') {
+                            $description_value = wp_strip_all_tags($raw);
+                        }
                     } elseif ($inner_name === 'core/buttons' && !empty($inner['innerBlocks'])) {
                         $button_block = $inner['innerBlocks'][0];
-                        $button_text_value = $button_block['attrs']['text'] ?? ($button_block['innerHTML'] ?? '');
-                        $button_url_value = $button_block['attrs']['url'] ?? ($button_block['attrs']['href'] ?? '');
+                        $button_attrs = $button_block['attrs'] ?? [];
+
+                        if (!empty($button_attrs['text'])) {
+                            $button_text_value = $button_attrs['text'];
+                        } elseif (!empty($button_attrs['content'])) {
+                            $button_text_value = $button_attrs['content'];
+                        } elseif (!empty($button_block['innerHTML'])) {
+                            $button_text_value = wp_strip_all_tags($button_block['innerHTML']);
+                        }
+
+                        if (!empty($button_attrs['url'])) {
+                            $button_url_value = $button_attrs['url'];
+                        } elseif (!empty($button_attrs['link']['url'])) {
+                            $button_url_value = $button_attrs['link']['url'];
+                        } elseif (!empty($button_block['innerHTML']) && preg_match('/href=["\']([^"\']+)["\']/', $button_block['innerHTML'], $href_match)) {
+                            $button_url_value = $href_match[1];
                     }
                 }
+                }
+
+                $title_value = trim($title_value);
+                $description_value = trim($description_value);
+                $button_text_clean = trim(wp_strip_all_tags($button_text_value));
+                $button_url_value = $button_url_value ? esc_url_raw($button_url_value) : '';
 
                 $content = [
-                    'title' => wp_strip_all_tags($title_value),
-                    'description' => wp_strip_all_tags($description_value),
+                    'title' => $title_value,
+                    'description' => $description_value,
                     'button' => [
-                        'text' => wp_strip_all_tags($button_text_value),
-                        'url' => $button_url_value,
+                        'text' => $button_text_clean,
+                        'url'  => $button_url_value,
                     ],
                     'image' => [
-                        'id' => $image_id,
+                        'id'  => $image_id,
                         'url' => $image_url,
                     ],
-                    'discount' => [
-                        'percent' => isset($attrs['discountPercent']) ? $attrs['discountPercent'] : '',
-                        'show' => isset($attrs['showDiscountBadge']) ? (bool) $attrs['showDiscountBadge'] : true,
-                    ],
-                    'background_color' => isset($attrs['backgroundColor']) ? $attrs['backgroundColor'] : '',
-                    'align' => isset($attrs['align']) ? $attrs['align'] : '',
-                    'inner_blocks' => $inner_blocks_data,
                 ];
                 break;
 
@@ -1098,6 +1405,97 @@ trait RESTBridge_Content_Parser {
                 ];
                 break;
 
+            case 'product-categories':
+                if (!taxonomy_exists('product_cat')) {
+                    $content = ['categories' => []];
+                    break;
+                }
+
+                $order_by = isset($attrs['orderBy']) ? sanitize_key($attrs['orderBy']) : 'name';
+                $order = isset($attrs['order']) && strtoupper($attrs['order']) === 'DESC' ? 'DESC' : 'ASC';
+                $hide_empty = true;
+                if (isset($attrs['hideEmpty'])) {
+                    $hide_empty = (bool) $attrs['hideEmpty'];
+                } elseif (isset($attrs['hasEmpty'])) {
+                    $hide_empty = !(bool) $attrs['hasEmpty'];
+                }
+
+                $term_args = [
+                    'taxonomy' => 'product_cat',
+                    'orderby' => $order_by,
+                    'order' => $order,
+                    'hide_empty' => $hide_empty,
+                ];
+
+                if (!empty($attrs['ids'])) {
+                    $term_args['include'] = array_map('intval', (array) $attrs['ids']);
+                }
+
+                if (isset($attrs['parent'])) {
+                    $term_args['parent'] = (int) $attrs['parent'];
+                } elseif (isset($attrs['parentId'])) {
+                    $term_args['parent'] = (int) $attrs['parentId'];
+                }
+
+                if (!empty($attrs['number'])) {
+                    $term_args['number'] = (int) $attrs['number'];
+                }
+
+                $terms = get_terms($term_args);
+                $categories = [];
+                if (!is_wp_error($terms) && !empty($terms)) {
+                    foreach ($terms as $term) {
+                        $payload = $this->map_term_payload($term);
+                        if (!empty($payload)) {
+                            $categories[] = $payload;
+                        }
+                    }
+                }
+
+                $show_count = isset($attrs['hasCount']) ? (bool) $attrs['hasCount'] : false;
+                $show_hierarchy = isset($attrs['showHierarchy']) ? (bool) $attrs['showHierarchy'] : false;
+                $show_images = isset($attrs['hasImages']) ? (bool) $attrs['hasImages'] : false;
+                $show_description = isset($attrs['hasDescription'])
+                    ? (bool) $attrs['hasDescription']
+                    : (isset($attrs['showDescription']) ? (bool) $attrs['showDescription'] : false);
+
+                $filtered_categories = [];
+                foreach ($categories as $category_payload) {
+                    $filtered = [
+                        'title' => $category_payload['title'],
+                    ];
+
+                    if ($show_description && !empty($category_payload['description'])) {
+                        $filtered['description'] = $category_payload['description'];
+                    }
+
+                    if ($show_images && !empty($category_payload['image']['url'])) {
+                        $filtered['image'] = $category_payload['image']['url'];
+                    }
+
+                    if ($show_hierarchy && !empty($category_payload['parent'])) {
+                        $filtered['parent'] = $category_payload['parent'];
+                    }
+
+                    if ($show_count) {
+                        $filtered['count'] = $category_payload['count'];
+                    }
+
+                    $filtered_categories[] = $filtered;
+                }
+
+                $content = [
+                    'categories' => $filtered_categories,
+                    'display' => [
+                        'show_count' => $show_count,
+                        'show_hierarchy' => $show_hierarchy,
+                        'show_images' => $show_images,
+                        'show_description' => $show_description,
+                        'is_dropdown' => isset($attrs['isDropdown']) ? (bool) $attrs['isDropdown'] : false,
+                    ],
+                ];
+                break;
+
             default:
                 // For Classic blocks (empty block_type) or unknown block types
                 // Parse HTML content to extract structured elements
@@ -1114,7 +1512,55 @@ trait RESTBridge_Content_Parser {
                 break;
         }
 
+        // Clean up empty/default values from content
+        $content = $this->clean_block_content($content);
+
         return $content;
+    }
+
+    /**
+     * Remove empty/default values from block content
+     */
+    protected function clean_block_content($content) {
+        if (!is_array($content)) {
+            return $content;
+        }
+
+        $cleaned = [];
+        foreach ($content as $key => $value) {
+            // Skip empty strings
+            if ($value === '') {
+                continue;
+            }
+            
+            // Skip false values (like dropCap: false)
+            if ($value === false) {
+                continue;
+            }
+            
+            // Skip null values
+            if ($value === null) {
+                continue;
+            }
+            
+            // Skip empty arrays
+            if (is_array($value) && empty($value)) {
+                continue;
+            }
+            
+            // Recursively clean nested arrays
+            if (is_array($value)) {
+                $cleaned_value = $this->clean_block_content($value);
+                // Only add if the cleaned array is not empty
+                if (!empty($cleaned_value)) {
+                    $cleaned[$key] = $cleaned_value;
+                }
+            } else {
+                $cleaned[$key] = $value;
+            }
+        }
+
+        return $cleaned;
     }
 
     /**
@@ -3180,5 +3626,570 @@ trait RESTBridge_Content_Parser {
         
         return $background;
     }
+
+    protected function extract_query_block_content($block, array $attrs = []): array {
+        $query_details = [
+            'query' => $attrs['query'] ?? [],
+            'displayLayout' => $attrs['layout'] ?? $attrs['displayLayout'] ?? [],
+        ];
+
+        $template_blocks = [];
+        if (is_array($block) && isset($block['innerBlocks']) && is_array($block['innerBlocks'])) {
+            $template_blocks = $this->find_query_template_blocks($block['innerBlocks']);
+        }
+
+        $query_args = $this->build_query_args_from_query_block($block, $attrs);
+
+        if (empty($query_args)) {
+            return array_merge($query_details, [
+                'posts' => [],
+                'count' => 0,
+            ]);
+        }
+
+        $query = new WP_Query($query_args);
+        $posts = [];
+
+        if ($query->have_posts()) {
+            while ($query->have_posts()) {
+                $query->the_post();
+                $posts[] = $this->map_query_post(get_post(), $template_blocks);
+            }
+            wp_reset_postdata();
+        }
+
+        return array_merge($query_details, [
+            'posts' => $posts,
+            'count' => count($posts),
+        ]);
+    }
+
+    protected function build_query_args_from_query_block($block, array $attrs = []): array {
+        $args_from_attrs = [];
+
+        if (!empty($attrs['query']) && is_array($attrs['query'])) {
+            $query = $attrs['query'];
+
+            if (!empty($query['postType'])) {
+                $args_from_attrs['post_type'] = sanitize_key($query['postType']);
+            }
+
+            if (isset($query['perPage'])) {
+                $args_from_attrs['posts_per_page'] = max(1, (int) $query['perPage']);
+            }
+
+            if (!empty($query['orderBy'])) {
+                $args_from_attrs['orderby'] = sanitize_key($query['orderBy']);
+            }
+
+            if (!empty($query['order'])) {
+                $args_from_attrs['order'] = strtoupper($query['order']) === 'ASC' ? 'ASC' : 'DESC';
+            }
+
+            if (!empty($query['offset'])) {
+                $args_from_attrs['offset'] = (int) $query['offset'];
+            }
+
+            if (!empty($query['include'])) {
+                $args_from_attrs['post__in'] = array_map('intval', (array) $query['include']);
+            }
+
+            if (!empty($query['exclude'])) {
+                $args_from_attrs['post__not_in'] = array_map('intval', (array) $query['exclude']);
+            }
+
+            if (!empty($query['sticky'])) {
+                $args_from_attrs['ignore_sticky_posts'] = true;
+            }
+
+            if (!empty($query['search'])) {
+                $args_from_attrs['s'] = $query['search'];
+            }
+
+            if (!empty($query['parents']) && is_array($query['parents'])) {
+                $args_from_attrs['post_parent__in'] = array_map('intval', $query['parents']);
+            }
+
+            if (!empty($query['taxQuery']) && is_array($query['taxQuery'])) {
+                $tax_query = [];
+                foreach ($query['taxQuery'] as $taxonomy => $terms) {
+                    if (!empty($terms)) {
+                        $tax_query[] = [
+                            'taxonomy' => $taxonomy,
+                            'field'    => 'term_id',
+                            'terms'    => array_map('intval', (array) $terms),
+                        ];
+                    }
+                }
+                if (!empty($tax_query)) {
+                    $args_from_attrs['tax_query'] = $tax_query;
+                }
+            }
+        }
+
+        $args = [];
+
+        if ($block && function_exists('build_query_vars_from_query_block')) {
+            $built = build_query_vars_from_query_block($block, 1);
+            if (is_array($built)) {
+                $args = $built;
+            }
+        }
+
+        if (!empty($args_from_attrs)) {
+            $args = array_merge($args, $args_from_attrs);
+        }
+
+        if (empty($args)) {
+            return [];
+        }
+
+        if (isset($args['post_type'])) {
+            if (is_array($args['post_type'])) {
+                $args['post_type'] = array_map('sanitize_key', $args['post_type']);
+            } else {
+                $args['post_type'] = sanitize_key($args['post_type']);
+            }
+        } else {
+            $args['post_type'] = 'post';
+        }
+
+        if (!isset($args['posts_per_page'])) {
+            $args['posts_per_page'] = get_option('posts_per_page');
+        }
+
+        if (!isset($args['orderby'])) {
+            $args['orderby'] = 'date';
+        }
+
+        if (!isset($args['order'])) {
+            $args['order'] = 'DESC';
+        }
+
+        if (!isset($args['post_status'])) {
+            $args['post_status'] = 'publish';
+        }
+
+        $args['no_found_rows'] = true;
+
+        return $args;
+    }
+
+    protected function map_query_post($post, array $template_blocks = []): array {
+        if (!($post instanceof \WP_Post)) {
+            return [];
+        }
+
+        $post_id = $post->ID;
+        $context = [
+            'id' => $post_id,
+            'type' => $post->post_type,
+            'title' => get_the_title($post_id),
+            'permalink' => get_permalink($post_id),
+            'date' => get_the_date('c', $post_id),
+            'excerpt' => $this->normalize_text(get_the_excerpt($post_id)),
+            'featured_image' => $this->get_featured_image_payload($post_id),
+        ];
+
+        if ($post->post_type === 'product' && function_exists('wc_get_product')) {
+            $product = wc_get_product($post_id);
+            if ($product) {
+                $raw_price = $product->get_price();
+                $formatted_price = $raw_price !== '' && function_exists('wc_price') ? wp_strip_all_tags(wc_price($raw_price)) : $raw_price;
+
+                $context['product'] = [
+                    'sku' => $product->get_sku(),
+                    'stock_status' => $product->get_stock_status(),
+                    'in_stock' => $product->is_in_stock(),
+                    'regular_price' => $product->get_regular_price(),
+                    'sale_price' => $product->get_sale_price(),
+                    'price' => [
+                        'raw' => $raw_price,
+                        'formatted' => $formatted_price,
+                        'currency' => function_exists('get_woocommerce_currency') ? get_woocommerce_currency() : '',
+                    ],
+                    'short_description' => $this->normalize_text($product->get_short_description()),
+                ];
+
+                $product_image = $this->get_product_image_payload($product);
+                if (!empty($product_image['url'])) {
+                    $context['product']['image'] = $product_image;
+                }
+
+                $term_objects = get_the_terms($post_id, 'product_cat');
+                if (!is_wp_error($term_objects) && !empty($term_objects)) {
+                    $categories = [];
+                    foreach ($term_objects as $term) {
+                        $payload = $this->map_term_payload($term);
+                        if (!empty($payload)) {
+                            $categories[] = $payload;
+                        }
+                    }
+                    if (!empty($categories)) {
+                        $context['product']['categories'] = $categories;
+                    }
+                }
+            }
+        }
+
+        $element = $this->map_query_template_elements($template_blocks, $post, $context);
+
+        $flags = $element['_flags'] ?? [];
+        unset($element['_flags']);
+
+        // Add product ID if it's a product
+        if ($post->post_type === 'product' && !empty($context['id'])) {
+            $element['content']['product_id'] = $context['id'];
+        }
+
+        if (empty($element['content']['text'])) {
+            $element['content']['text'] = $context['title'];
+        }
+
+        if (!empty($flags['title_link']) && empty($element['content']['link'])) {
+            $element['content']['link'] = $context['permalink'];
+        }
+
+        if (!empty($flags['image']) && empty($element['content']['url']) && !empty($context['featured_image']['url'])) {
+            $element['content']['url'] = $context['featured_image']['url'];
+            $element['content']['image_alt'] = $context['featured_image']['alt'] ?? '';
+        }
+
+        if (!empty($flags['price']) && isset($context['product']['price'])) {
+            $price_context = $context['product']['price'];
+            if (!empty($price_context['currency'])) {
+                $element['content']['currency'] = $price_context['currency'];
+            }
+            if (!empty($price_context['raw'])) {
+                $element['content']['price'] = $price_context['raw'];
+            }
+            if (!empty($price_context['formatted'])) {
+                $element['content']['price_formatted'] = $price_context['formatted'];
+            }
+
+            // Add regular_price and sale_price if available
+            if (!empty($context['product']['regular_price'])) {
+                $element['content']['regular_price'] = $context['product']['regular_price'];
+                if (function_exists('wc_price') && !empty($context['product']['regular_price'])) {
+                    $element['content']['regular_price_formatted'] = wp_strip_all_tags(wc_price($context['product']['regular_price']));
+                }
+            }
+            if (!empty($context['product']['sale_price'])) {
+                $element['content']['sale_price'] = $context['product']['sale_price'];
+                if (function_exists('wc_price') && !empty($context['product']['sale_price'])) {
+                    $element['content']['sale_price_formatted'] = wp_strip_all_tags(wc_price($context['product']['sale_price']));
+                }
+            }
+        } else {
+            unset($element['content']['currency'], $element['content']['price'], $element['content']['price_formatted']);
+        }
+
+        if (empty($flags['rating']) || $element['content']['rating'] === null) {
+            unset($element['content']['rating']);
+        }
+
+        if (empty($flags['button'])) {
+            unset($element['content']['add_to_cart']);
+        }
+
+        if (empty($flags['sale_badge'])) {
+            unset($element['content']['sale_badge']);
+        }
+
+        if (empty($flags['read_more'])) {
+            unset($element['content']['read_more']);
+        }
+
+        if (empty($element['content']['classNames'])) {
+            unset($element['content']['classNames']);
+        }
+
+        return [
+            'elements' => [$element],
+        ];
+    }
+
+    protected function get_featured_image_payload($post_id): array {
+        $image_id = get_post_thumbnail_id($post_id);
+
+        if (!$image_id) {
+            return [
+                'id' => null,
+                'url' => '',
+                'alt' => '',
+            ];
+        }
+
+        $image_url = wp_get_attachment_image_url($image_id, 'full');
+        $alt = get_post_meta($image_id, '_wp_attachment_image_alt', true);
+
+        return [
+            'id' => $image_id,
+            'url' => $image_url ?: '',
+            'alt' => $alt ?: get_the_title($post_id),
+        ];
+    }
+
+    protected function get_product_image_payload($product): array {
+        if (!$product || !method_exists($product, 'get_image_id')) {
+            return [
+                'id' => null,
+                'url' => '',
+                'alt' => '',
+            ];
+        }
+
+        $image_id = $product->get_image_id();
+        if (!$image_id) {
+            return [
+                'id' => null,
+                'url' => '',
+                'alt' => '',
+            ];
+        }
+
+        $image_url = wp_get_attachment_image_url($image_id, 'full');
+        $alt = get_post_meta($image_id, '_wp_attachment_image_alt', true);
+
+        return [
+            'id' => $image_id,
+            'url' => $image_url ?: '',
+            'alt' => $alt ?: $product->get_name(),
+        ];
+    }
+
+    protected function normalize_text($value): string {
+        if (!is_string($value)) {
+            return '';
+        }
+
+        $value = wp_strip_all_tags($value);
+        $value = preg_replace('/\s+/u', ' ', $value);
+        return trim($value);
+    }
+
+    protected function map_term_payload($term): array {
+        if (!($term instanceof WP_Term)) {
+            return [];
+        }
+
+        $term_id = $term->term_id;
+        $thumbnail_id = get_term_meta($term_id, 'thumbnail_id', true);
+        $image = [
+            'id' => $thumbnail_id ? (int) $thumbnail_id : null,
+            'url' => $thumbnail_id ? wp_get_attachment_image_url($thumbnail_id, 'full') : '',
+            'alt' => $term->name,
+        ];
+
+        return [
+            'id' => $term_id,
+            'title' => $term->name,
+            'slug' => $term->slug,
+            'description' => $this->normalize_text($term->description),
+            'url' => !is_wp_error(get_term_link($term)) ? get_term_link($term) : '',
+            'count' => (int) $term->count,
+            'image' => $image,
+            'parent' => (int) $term->parent,
+        ];
+    }
+
+    /**
+     * Recursively locate post template inner blocks within a query block
+     */
+    protected function find_query_template_blocks(array $blocks): array {
+        foreach ($blocks as $block) {
+            $block_name = $block['blockName'] ?? '';
+            if ($block_name === 'core/post-template' || $block_name === 'woocommerce/product-collection' || $block_name === 'woocommerce/product-template') {
+                return $block['innerBlocks'] ?? [];
+            }
+
+            if (!empty($block['innerBlocks']) && is_array($block['innerBlocks'])) {
+                $found = $this->find_query_template_blocks($block['innerBlocks']);
+                if (!empty($found)) {
+                    return $found;
+                }
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Map post template blocks to structured element content for query loop posts
+     */
+    protected function map_query_template_elements(array $blocks, \WP_Post $post, array $context): array {
+        $aggregate = [
+            'type' => 'post-title',
+            'content' => [],
+            '_flags' => [
+                'title_link' => false,
+                'image' => false,
+                'price' => false,
+                'read_more' => false,
+                'rating' => false,
+                'button' => false,
+                'sale_badge' => false,
+            ],
+        ];
+
+        if (empty($blocks)) {
+            return $aggregate;
+        }
+
+        $this->populate_query_aggregate($blocks, $post, $context, $aggregate);
+
+        return $aggregate;
+    }
+
+    /**
+     * Walk template blocks and populate aggregate content
+     */
+    protected function populate_query_aggregate(array $blocks, \WP_Post $post, array $context, array &$aggregate): void {
+        foreach ($blocks as $block) {
+            $block_name = $block['blockName'] ?? '';
+            if (empty($block_name)) {
+                continue;
+            }
+
+            switch ($block_name) {
+                case 'core/post-title':
+                    $aggregate['content']['text'] = get_the_title($post);
+                    $aggregate['content']['link'] = get_permalink($post);
+                    $aggregate['_flags']['title_link'] = true;
+                    break;
+
+                case 'core/post-featured-image':
+                case 'woocommerce/product-image':
+                case 'woocommerce/product-image-gallery':
+                case 'woocommerce/product-collection-product-image':
+                    $image = $context['product']['image'] ?? $context['featured_image'] ?? [];
+                    if (!empty($image['url'])) {
+                        $aggregate['content']['url'] = $image['url'];
+                        $aggregate['content']['image_alt'] = $image['alt'] ?? '';
+                        $aggregate['_flags']['image'] = true;
+                    }
+                    break;
+
+                case 'core/post-excerpt':
+                    $aggregate['content']['description'] = $this->normalize_text(get_the_excerpt($post));
+                    break;
+
+                case 'core/post-content':
+                    $aggregate['content']['content'] = $this->normalize_text(get_the_content(null, false, $post));
+                    break;
+
+                case 'core/post-date':
+                    $aggregate['content']['date'] = get_the_date('c', $post);
+                    $aggregate['content']['date_formatted'] = get_the_date('', $post);
+                    break;
+
+                case 'core/post-author-name':
+                    $aggregate['content']['author'] = get_the_author_meta('display_name', get_post_field('post_author', $post));
+                    break;
+
+                case 'core/post-terms':
+                    $taxonomy = $block['attrs']['term'] ?? ($block['attrs']['taxonomy'] ?? 'category');
+                    $terms = get_the_terms($post, $taxonomy);
+                    if (!is_wp_error($terms) && !empty($terms)) {
+                        $aggregate['content']['terms'] = array_map(function ($term) {
+                            return $term->name;
+                        }, $terms);
+                    }
+                    break;
+
+                case 'woocommerce/product-price':
+                case 'woocommerce/product-collection-product-price':
+                    if (!empty($context['product']['price'])) {
+                        $aggregate['_flags']['price'] = true;
+                        if (!empty($context['product']['price']['currency'])) {
+                            $aggregate['content']['currency'] = $context['product']['price']['currency'];
+                        }
+                        if (!empty($context['product']['price']['raw'])) {
+                            $aggregate['content']['price'] = $context['product']['price']['raw'];
+                        }
+                        if (!empty($context['product']['price']['formatted'])) {
+                            $aggregate['content']['price_formatted'] = $context['product']['price']['formatted'];
+                        }
+                    }
+                    break;
+
+                case 'core/post-read-more':
+                case 'core/read-more':
+                    $aggregate['content']['read_more'] = get_permalink($post);
+                    $aggregate['_flags']['read_more'] = true;
+                    break;
+
+                case 'core/buttons':
+                    if (!empty($block['innerBlocks'])) {
+                        $this->populate_query_aggregate($block['innerBlocks'], $post, $context, $aggregate);
+                    }
+                    break;
+
+                case 'core/button':
+                    $link = $block['attrs']['url'] ?? get_permalink($post);
+                    $aggregate['content']['read_more'] = $link;
+                    $aggregate['_flags']['read_more'] = true;
+                    break;
+
+                case 'woocommerce/product-sale-badge':
+                case 'woocommerce/product-collection-product-sale-badge':
+                    if (!empty($context['product'])) {
+                        $product = wc_get_product($post->ID);
+                        if ($product) {
+                            $aggregate['_flags']['sale_badge'] = true;
+                            $aggregate['content']['sale_badge'] = [
+                                'on_sale' => $product->is_on_sale(),
+                                'sale_price' => $product->get_sale_price(),
+                                'regular_price' => $product->get_regular_price(),
+                            ];
+                        }
+                    }
+                    break;
+
+                case 'woocommerce/product-rating':
+                case 'woocommerce/product-collection-product-rating':
+                    if (!empty($context['product'])) {
+                        $product = wc_get_product($post->ID);
+                        if ($product) {
+                            $aggregate['_flags']['rating'] = true;
+                            $average_rating = (float) $product->get_average_rating();
+                            $aggregate['content']['rating'] = $average_rating > 0 ? $average_rating : null;
+                        }
+                    }
+                    break;
+
+                case 'woocommerce/product-add-to-cart':
+                case 'woocommerce/product-collection-add-to-cart-button':
+                case 'woocommerce/product-button':
+                    $product = wc_get_product($post->ID);
+                    if ($product && function_exists('wc_get_cart_url')) {
+                        $aggregate['_flags']['button'] = true;
+                        $aggregate['content']['add_to_cart'] = [
+                            'product_id' => $product->get_id(),
+                            'product_type' => $product->get_type(),
+                            'cart_url' => wc_get_cart_url(),
+                            'text' => $block['attrs']['text'] ?? __('Add to cart', 'woocommerce'),
+                            'is_purchasable' => $product->is_purchasable(),
+                            'is_in_stock' => $product->is_in_stock(),
+                            'stock_quantity' => $product->get_stock_quantity(),
+                            'stock_status' => $product->get_stock_status(),
+                            'requires_shipping' => $product->needs_shipping(),
+                        ];
+                    }
+                    break;
+
+                default:
+                    if (!empty($block['innerBlocks'])) {
+                        $this->populate_query_aggregate($block['innerBlocks'], $post, $context, $aggregate);
+                    }
+                    break;
+            }
+
+            if (!empty($block['attrs']['className'])) {
+                $aggregate['content']['classNames'][] = trim($block['attrs']['className']);
+            }
+        }
+    }
 }
+
 

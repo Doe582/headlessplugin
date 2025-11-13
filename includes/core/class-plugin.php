@@ -19,6 +19,7 @@ class RESTBridge_Plugin {
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-taxonomies-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-menus-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-custom-post-types-api.php';
+        require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-fluent-form-api.php';
         
         // Elementor & Gutenberg APIs
         require_once plugin_dir_path(__FILE__) . '../api/elementor/class-content-parser-trait.php';
@@ -99,6 +100,12 @@ class RESTBridge_Plugin {
 
         $cpt_api = new RESTBridge_Custom_Post_Types_API();
         $cpt_api->register_routes();
+
+        // FluentForm API
+        if (class_exists('\FluentForm\App\Models\Submission')) {
+            $fluent_form_api = new RESTBridge_FluentForm_API();
+            $fluent_form_api->register_routes();
+        }
 
         // Elementor & Gutenberg APIs
         $elementor_pages_api = new RESTBridge_Elementor_Pages_API();
