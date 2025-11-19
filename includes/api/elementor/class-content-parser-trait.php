@@ -39,7 +39,7 @@ trait RESTBridge_Content_Parser {
                 'title' => get_the_title($page->ID),
                 'slug' => $page->post_name,
                 'permalink' => get_permalink($page->ID),
-                'featured_image' => get_the_post_thumbnail_url($page->ID, 'full'),
+                'featured_image' => $this->build_image_object(get_post_thumbnail_id($page->ID)),
             ],
             'sections' => $sections,
             'total_sections' => count($sections),
@@ -140,6 +140,7 @@ trait RESTBridge_Content_Parser {
             $result['total_columns'] = 0;
         }
 
+        $this->transform_image_fields($result);
         return $result;
     }
 
@@ -162,12 +163,15 @@ trait RESTBridge_Content_Parser {
 
         $column_settings = isset($column['settings']) ? $column['settings'] : [];
 
-        return [
+        $column_data = [
             'type' => isset($column['elType']) ? $column['elType'] : 'column',
             'settings' => $this->clean_settings($column_settings),
             'widgets' => $widgets,
             'total_widgets' => count($widgets),
         ];
+
+        $this->transform_image_fields($column_data);
+        return $column_data;
     }
 
     /**
@@ -194,6 +198,7 @@ trait RESTBridge_Content_Parser {
             }
         }
 
+        $this->transform_image_fields($widget_data);
         return $widget_data;
     }
 
@@ -657,7 +662,7 @@ trait RESTBridge_Content_Parser {
                 'title' => get_the_title($page->ID),
                 'slug' => $page->post_name,
                 'permalink' => get_permalink($page->ID),
-                'featured_image' => get_the_post_thumbnail_url($page->ID, 'full'),
+                'featured_image' => $this->build_image_object(get_post_thumbnail_id($page->ID)),
                 'editor' => 'gutenberg',
             ],
             'blocks' => $parsed_blocks,
@@ -694,6 +699,16 @@ trait RESTBridge_Content_Parser {
             'attributes' => $this->clean_settings($attrs),
             'raw_content' => $inner_html,
         ];
+
+        if ($block_type === 'group') {
+            $group_class = $this->extract_group_block_class($block, $attrs);
+            if (!empty($group_class)) {
+                $block_data['className'] = $group_class;
+                if (isset($block_data['content']) && is_array($block_data['content'])) {
+                    $block_data['content']['className'] = $group_class;
+                }
+            }
+        }
 
         // Add identifier from content if available (title, text, etc.)
         $identifier = $this->get_block_identifier($block_type, $block_data['content'], $attrs);
@@ -738,15 +753,73 @@ trait RESTBridge_Content_Parser {
 
         // For simple blocks, return only content
         if (in_array($block_type, $simple_blocks, true)) {
+            $this->transform_image_fields($block_content);
             return $block_content;
         }
 
         // Handle query block separately (already processed content)
-        if ($block_type === 'query' || $block_type === 'product-collection') {
-            return [
-                'type' => $block_type,
-                'content' => $this->extract_query_block_content($block, $attrs),
+        if ($block_type === 'product-collection') {
+            $collection = $this->extract_query_block_content($block, $attrs);
+            $elements = [];
+            $preferred_category_ids = $this->extract_product_collection_category_ids($collection, $attrs);
+
+            if (!empty($collection['posts']) && is_array($collection['posts'])) {
+                foreach ($collection['posts'] as $post) {
+                    $category_payload = null;
+
+                    if (
+                        isset($post['post_type'], $post['id']) &&
+                        $post['post_type'] === 'product'
+                    ) {
+                        $category_payload = $this->resolve_product_category_for_post(
+                            (int) $post['id'],
+                            $preferred_category_ids
+                        );
+                    }
+
+                    if (!empty($post['elements']) && is_array($post['elements'])) {
+                        foreach ($post['elements'] as $element) {
+                            if (!empty($element) && is_array($element)) {
+                                if ($category_payload && isset($element['content']) && is_array($element['content'])) {
+                                    $element['content']['category'] = $category_payload;
+                                }
+                                $elements[] = $element;
+                            }
+                        }
+                    }
+                }
+            }
+
+            $payload = [
+                'content' => [
+                    'elements' => $elements,
+                ],
             ];
+            $this->transform_image_fields($payload);
+            return $payload;
+        }
+
+        if ($block_type === 'query') {
+            $collection = $this->extract_query_block_content($block, $attrs);
+            $posts = [];
+
+            if (!empty($collection['posts']) && is_array($collection['posts'])) {
+                foreach ($collection['posts'] as $post) {
+                    if (!empty($post['elements']) && is_array($post['elements'])) {
+                        $posts[] = [
+                            'elements' => array_values(array_filter($post['elements'], 'is_array')),
+                        ];
+                    }
+                }
+            }
+
+            $payload = [
+                'content' => [
+                    'posts' => $posts,
+                ],
+            ];
+            $this->transform_image_fields($payload);
+            return $payload;
         }
 
         // Handle home-banner-section with specific structure
@@ -757,7 +830,6 @@ trait RESTBridge_Content_Parser {
                 'position',
                 'type',
                 'block_name',
-                'attributes',
             ];
 
             $simplified = array_intersect_key($block_data, array_flip($allowed_keys));
@@ -765,6 +837,7 @@ trait RESTBridge_Content_Parser {
                 $simplified['content'] = $block_content;
             }
 
+            $this->transform_image_fields($simplified);
             return $simplified;
         }
 
@@ -838,7 +911,9 @@ trait RESTBridge_Content_Parser {
             $simplified['blocks'] = $block_data['blocks'];
         }
 
-        // Don't include total_blocks - it's redundant
+        // Convert any image fields inside the simplified payload
+        $this->transform_image_fields($simplified);
+
         return $simplified;
     }
 
@@ -1001,6 +1076,64 @@ trait RESTBridge_Content_Parser {
         }
         
         return $column_css_class;
+    }
+
+    /**
+     * Extract Additional CSS class for Group block.
+     */
+    protected function extract_group_block_class($block, $attrs) {
+        $candidates = [
+            $attrs['className'] ?? '',
+            $attrs['class'] ?? '',
+            $block['attrs']['className'] ?? '',
+        ];
+
+        foreach ($candidates as $candidate) {
+            $candidate = trim((string) $candidate);
+            if ($candidate !== '') {
+                return $candidate;
+            }
+        }
+
+        $html_sources = [];
+        if (!empty($block['innerHTML'])) {
+            $html_sources[] = $block['innerHTML'];
+        }
+        if (!empty($block['innerContent']) && is_array($block['innerContent'])) {
+            $html_sources = array_merge($html_sources, array_filter($block['innerContent'], 'is_string'));
+        }
+
+        foreach ($html_sources as $html) {
+            if (preg_match('/<[^>]+class=["\']([^"\']+)["\'][^>]*>/', $html, $matches)) {
+                $class_attr = trim($matches[1]);
+                if ($class_attr !== '') {
+                    $custom_classes = $this->filter_group_classes($class_attr);
+                    return $custom_classes ?: $class_attr;
+                }
+            }
+        }
+
+        if (function_exists('render_block') && is_array($block)) {
+            $rendered = render_block($block);
+            if (!empty($rendered) && preg_match('/<[^>]+class=["\']([^"\']+)["\'][^>]*>/', $rendered, $matches)) {
+                $class_attr = trim($matches[1]);
+                if ($class_attr !== '') {
+                    $custom_classes = $this->filter_group_classes($class_attr);
+                    return $custom_classes ?: $class_attr;
+                }
+            }
+        }
+
+        return '';
+    }
+
+    protected function filter_group_classes($class_attr) {
+        $class_array = preg_split('/\s+/', $class_attr);
+        $custom_classes = array_filter($class_array, function ($class) {
+            return !preg_match('/^(wp-block-group|is-layout-|wp-container-)/', $class) && $class !== '';
+        });
+
+        return empty($custom_classes) ? '' : implode(' ', $custom_classes);
     }
 
     /**
@@ -1278,6 +1411,19 @@ trait RESTBridge_Content_Parser {
                 }
                 break;
 
+            case 'review-scale': // styluza/review-scale custom block
+                $prompt = isset($attrs['prompt']) ? wp_strip_all_tags($attrs['prompt']) : '';
+                if ($prompt === '') {
+                    $prompt = 'Add a review from 1 to 5?';
+                }
+                $placeholder = isset($attrs['placeholder']) ? wp_strip_all_tags($attrs['placeholder']) : '';
+
+                $content = [
+                    'prompt' => $prompt,
+                    'placeholder' => $placeholder,
+                ];
+                break;
+
             case 'columns':
                 // Columns block contains nested blocks
                 $content = [
@@ -1462,23 +1608,21 @@ trait RESTBridge_Content_Parser {
                 $filtered_categories = [];
                 foreach ($categories as $category_payload) {
                     $filtered = [
-                        'title' => $category_payload['title'],
+                        'id' => isset($category_payload['id']) ? (int) $category_payload['id'] : 0,
+                        'title' => $category_payload['title'] ?? '',
+                        'image' => $category_payload['image']['url'] ?? '',
                     ];
 
                     if ($show_description && !empty($category_payload['description'])) {
                         $filtered['description'] = $category_payload['description'];
                     }
 
-                    if ($show_images && !empty($category_payload['image']['url'])) {
-                        $filtered['image'] = $category_payload['image']['url'];
-                    }
-
                     if ($show_hierarchy && !empty($category_payload['parent'])) {
-                        $filtered['parent'] = $category_payload['parent'];
+                        $filtered['parent'] = (int) $category_payload['parent'];
                     }
 
                     if ($show_count) {
-                        $filtered['count'] = $category_payload['count'];
+                        $filtered['count'] = (int) $category_payload['count'];
                     }
 
                     $filtered_categories[] = $filtered;
@@ -3127,13 +3271,17 @@ trait RESTBridge_Content_Parser {
                 break;
                 
             case 'featured':
-                $args['tax_query'] = [
-                    [
-                        'taxonomy' => 'product_visibility',
-                        'field' => 'name',
-                        'terms' => 'featured',
-                    ],
+                // Featured products are stored in product_visibility taxonomy
+                if (!isset($args['tax_query'])) {
+                    $args['tax_query'] = [];
+                }
+                $args['tax_query'][] = [
+                    'taxonomy' => 'product_visibility',
+                    'field'    => 'slug',
+                    'terms'    => ['featured'],
+                    'operator' => 'IN',
                 ];
+                
                 break;
                 
             case 'sale':
@@ -3182,6 +3330,9 @@ trait RESTBridge_Content_Parser {
                 $product = wc_get_product(get_the_ID());
                 
                 if ($product) {
+                    $average_rating = (float) $product->get_average_rating();
+                    $review_count = (int) $product->get_review_count();
+                    
                     $products[] = [
                         'id' => $product->get_id(),
                         'title' => $product->get_name(),
@@ -3209,6 +3360,8 @@ trait RESTBridge_Content_Parser {
                         'tags' => wp_get_post_terms($product->get_id(), 'product_tag', ['fields' => 'names']),
                         'sku' => $product->get_sku(),
                         'type' => $product->get_type(),
+                        'rating' => $average_rating > 0 ? $average_rating : null,
+                        'review_count' => $review_count,
                     ];
                 }
             }
@@ -3243,6 +3396,9 @@ trait RESTBridge_Content_Parser {
             return ['error' => 'Product not found'];
         }
 
+        $average_rating = (float) $product->get_average_rating();
+        $review_count = (int) $product->get_review_count();
+        
         return [
             'id' => $product->get_id(),
             'title' => $product->get_name(),
@@ -3272,6 +3428,8 @@ trait RESTBridge_Content_Parser {
             'tags' => wp_get_post_terms($product->get_id(), 'product_tag', ['fields' => 'names']),
             'sku' => $product->get_sku(),
             'type' => $product->get_type(),
+            'rating' => $average_rating > 0 ? $average_rating : null,
+            'review_count' => $review_count,
         ];
     }
 
@@ -3770,8 +3928,195 @@ trait RESTBridge_Content_Parser {
             $args['post_status'] = 'publish';
         }
 
+        $block_name = $block['blockName'] ?? '';
+        $query_attrs = $attrs['query'] ?? [];
+
+        if ($this->is_woocommerce_product_collection_block($block_name, $query_attrs)) {
+            $args = $this->apply_woocommerce_collection_query_filters($args, $query_attrs);
+        }
+
         $args['no_found_rows'] = true;
 
+        return $args;
+    }
+
+    protected function is_woocommerce_product_collection_block($block_name, array $query_attrs = []): bool {
+        if (empty($block_name)) {
+            return false;
+        }
+
+        if ($block_name === 'woocommerce/product-collection') {
+            return true;
+        }
+
+        return !empty($query_attrs['isProductCollectionBlock']);
+    }
+
+    protected function apply_woocommerce_collection_query_filters(array $args, array $query_attrs): array {
+        if (!function_exists('wc_get_product_visibility_term_ids')) {
+            return $args;
+        }
+
+        $args['post_type'] = 'product';
+
+        // Handle on sale filter.
+        if (!empty($query_attrs['woocommerceOnSale']) && function_exists('wc_get_product_ids_on_sale')) {
+            $sale_ids = array_map('intval', wc_get_product_ids_on_sale());
+            if (empty($sale_ids)) {
+                $args['post__in'] = [0];
+                return $args;
+            }
+
+            if (!empty($args['post__in'])) {
+                $args['post__in'] = array_values(array_intersect((array) $args['post__in'], $sale_ids));
+            } else {
+                $args['post__in'] = $sale_ids;
+            }
+
+            if (empty($args['post__in'])) {
+                $args['post__in'] = [0];
+            }
+        }
+
+        // Featured products.
+        if (!empty($query_attrs['featured'])) {
+            $visibility_terms = wc_get_product_visibility_term_ids();
+            if (!empty($visibility_terms['featured'])) {
+                $args = $this->append_tax_query($args, [
+                    'taxonomy' => 'product_visibility',
+                    'field'    => 'term_id',
+                    'terms'    => (array) $visibility_terms['featured'],
+                    'operator' => 'IN',
+                ]);
+            }
+        }
+
+        // Stock status filter (if subset selected).
+        if (!empty($query_attrs['woocommerceStockStatus']) && is_array($query_attrs['woocommerceStockStatus'])) {
+            $statuses = array_values(array_filter(array_map('sanitize_key', $query_attrs['woocommerceStockStatus'])));
+            $all_statuses = ['instock', 'outofstock', 'onbackorder'];
+            $diff = array_diff($all_statuses, $statuses);
+            if (!empty($statuses) && count($diff) > 0) {
+                $args = $this->append_meta_query($args, [
+                    'key'     => '_stock_status',
+                    'value'   => $statuses,
+                    'compare' => 'IN',
+                ]);
+            }
+        }
+
+        // Hand picked products.
+        if (!empty($query_attrs['woocommerceHandPickedProducts'])) {
+            $handpicked = array_map('intval', (array) $query_attrs['woocommerceHandPickedProducts']);
+            if (!empty($handpicked)) {
+                $args['post__in'] = !empty($args['post__in'])
+                    ? array_values(array_intersect((array) $args['post__in'], $handpicked))
+                    : $handpicked;
+            }
+        }
+
+        // Custom ordering (popularity, rating, price, etc).
+        if (!empty($query_attrs['orderBy'])) {
+            $args = $this->apply_custom_product_ordering($args, $query_attrs['orderBy']);
+        }
+
+        // Time frame filter (e.g., new arrivals).
+        if (!empty($query_attrs['timeFrame']) && is_array($query_attrs['timeFrame'])) {
+            $args = $this->apply_time_frame_filter($args, $query_attrs['timeFrame']);
+        }
+
+        // Ensure consistent ordering fallback if no matches.
+        if (!isset($args['orderby']) || empty($args['orderby'])) {
+            $args['orderby'] = 'date';
+        }
+
+        return $args;
+    }
+
+    protected function append_tax_query(array $args, array $clause): array {
+        if (empty($clause)) {
+            return $args;
+        }
+
+        if (!isset($args['tax_query']) || !is_array($args['tax_query'])) {
+            $args['tax_query'] = [];
+        }
+
+        $args['tax_query'][] = $clause;
+        return $args;
+    }
+
+    protected function append_meta_query(array $args, array $clause): array {
+        if (empty($clause)) {
+            return $args;
+        }
+
+        if (!isset($args['meta_query']) || !is_array($args['meta_query'])) {
+            $args['meta_query'] = [];
+        }
+
+        $args['meta_query'][] = $clause;
+        return $args;
+    }
+
+    protected function apply_custom_product_ordering(array $args, string $orderby): array {
+        $orderby = strtolower($orderby);
+
+        switch ($orderby) {
+            case 'popularity':
+                $args['meta_key'] = 'total_sales';
+                $args['orderby'] = 'meta_value_num';
+                $args['order'] = 'DESC';
+                break;
+
+            case 'rating':
+                $args['meta_key'] = '_wc_average_rating';
+                $args['orderby'] = 'meta_value_num';
+                $args['order'] = 'DESC';
+                break;
+
+            case 'price':
+            case 'price_asc':
+                $args['meta_key'] = '_price';
+                $args['orderby'] = 'meta_value_num';
+                $args['order'] = 'ASC';
+                break;
+
+            case 'price-desc':
+            case 'price_desc':
+                $args['meta_key'] = '_price';
+                $args['orderby'] = 'meta_value_num';
+                $args['order'] = 'DESC';
+                break;
+
+            default:
+                // leave as provided (date, title, etc).
+                break;
+        }
+
+        return $args;
+    }
+
+    protected function apply_time_frame_filter(array $args, array $time_frame): array {
+        $operator = strtolower($time_frame['operator'] ?? 'in');
+        $value = $time_frame['value'] ?? '';
+
+        if (empty($value)) {
+            return $args;
+        }
+
+        $query_operator = $operator === 'not-in' ? 'before' : 'after';
+        $clause = [
+            'column'    => 'post_date_gmt',
+            $query_operator => $value,
+            'inclusive' => true,
+        ];
+
+        if (!isset($args['date_query']) || !is_array($args['date_query'])) {
+            $args['date_query'] = [];
+        }
+
+        $args['date_query'][] = $clause;
         return $args;
     }
 
@@ -3797,6 +4142,9 @@ trait RESTBridge_Content_Parser {
                 $raw_price = $product->get_price();
                 $formatted_price = $raw_price !== '' && function_exists('wc_price') ? wp_strip_all_tags(wc_price($raw_price)) : $raw_price;
 
+                $average_rating = (float) $product->get_average_rating();
+                $review_count = (int) $product->get_review_count();
+                
                 $context['product'] = [
                     'sku' => $product->get_sku(),
                     'stock_status' => $product->get_stock_status(),
@@ -3809,6 +4157,8 @@ trait RESTBridge_Content_Parser {
                         'currency' => function_exists('get_woocommerce_currency') ? get_woocommerce_currency() : '',
                     ],
                     'short_description' => $this->normalize_text($product->get_short_description()),
+                    'rating' => $average_rating > 0 ? $average_rating : null,
+                    'review_count' => $review_count,
                 ];
 
                 $product_image = $this->get_product_image_payload($product);
@@ -3816,19 +4166,6 @@ trait RESTBridge_Content_Parser {
                     $context['product']['image'] = $product_image;
                 }
 
-                $term_objects = get_the_terms($post_id, 'product_cat');
-                if (!is_wp_error($term_objects) && !empty($term_objects)) {
-                    $categories = [];
-                    foreach ($term_objects as $term) {
-                        $payload = $this->map_term_payload($term);
-                        if (!empty($payload)) {
-                            $categories[] = $payload;
-                        }
-                    }
-                    if (!empty($categories)) {
-                        $context['product']['categories'] = $categories;
-                    }
-                }
             }
         }
 
@@ -3837,9 +4174,28 @@ trait RESTBridge_Content_Parser {
         $flags = $element['_flags'] ?? [];
         unset($element['_flags']);
 
+        // Always include post ID within content payload
+        $element['content']['post_id'] = $post_id;
+
+        // Add taxonomy payloads (categories + custom taxonomies)
+        $taxonomy_payloads = $this->get_post_taxonomy_payloads($post_id);
+        if (!empty($taxonomy_payloads)) {
+            $element['content']['taxonomies'] = $taxonomy_payloads;
+        }
+
         // Add product ID if it's a product
         if ($post->post_type === 'product' && !empty($context['id'])) {
             $element['content']['product_id'] = $context['id'];
+        }
+        
+        // Always add rating and review_count from product context if available
+        if ($post->post_type === 'product' && !empty($context['product'])) {
+            if (!empty($context['product']['rating'])) {
+                $element['content']['rating'] = $context['product']['rating'];
+            }
+            if (!empty($context['product']['review_count'])) {
+                $element['content']['review_count'] = $context['product']['review_count'];
+            }
         }
 
         if (empty($element['content']['text'])) {
@@ -3850,9 +4206,8 @@ trait RESTBridge_Content_Parser {
             $element['content']['link'] = $context['permalink'];
         }
 
-        if (!empty($flags['image']) && empty($element['content']['url']) && !empty($context['featured_image']['url'])) {
-            $element['content']['url'] = $context['featured_image']['url'];
-            $element['content']['image_alt'] = $context['featured_image']['alt'] ?? '';
+        if (!empty($flags['image']) && empty($element['content']['image']) && !empty($context['featured_image']['url'])) {
+            $element['content']['image'] = $context['featured_image'];
         }
 
         if (!empty($flags['price']) && isset($context['product']['price'])) {
@@ -3884,7 +4239,11 @@ trait RESTBridge_Content_Parser {
             unset($element['content']['currency'], $element['content']['price'], $element['content']['price_formatted']);
         }
 
-        if (empty($flags['rating']) || $element['content']['rating'] === null) {
+        // Rating and review_count are already added above for products
+        // Only unset rating if it's explicitly null and no rating widget was found
+        if (empty($flags['rating']) && 
+            isset($element['content']['rating']) && 
+            $element['content']['rating'] === null) {
             unset($element['content']['rating']);
         }
 
@@ -3904,7 +4263,20 @@ trait RESTBridge_Content_Parser {
             unset($element['content']['classNames']);
         }
 
+        // Remove presentation metadata the consumer does not need
+        unset($element['type']);
+
+        if (isset($element['content']['link'])) {
+            unset($element['content']['link']);
+        }
+
+        if (!empty($element['content']['add_to_cart']) && is_array($element['content']['add_to_cart'])) {
+            unset($element['content']['add_to_cart']['cart_url']);
+        }
+
         return [
+            'id' => $post_id,
+            'post_type' => $post->post_type,
             'elements' => [$element],
         ];
     }
@@ -3956,6 +4328,145 @@ trait RESTBridge_Content_Parser {
             'url' => $image_url ?: '',
             'alt' => $alt ?: $product->get_name(),
         ];
+    }
+
+    /**
+     * Build a standardized image object.
+     */
+    protected function build_image_object($image_id = null, $image_url = '', $alt = ''): array {
+        $image_id = $image_id ? (int) $image_id : null;
+
+        if ($image_id) {
+            if (empty($image_url)) {
+                $image_url = wp_get_attachment_image_url($image_id, 'full');
+            }
+
+            if (empty($alt)) {
+                $alt = get_post_meta($image_id, '_wp_attachment_image_alt', true);
+            }
+        }
+
+        return [
+            'id' => $image_id,
+            'url' => $image_url ?: '',
+            'alt' => $alt ?: '',
+        ];
+    }
+
+    /**
+     * Recursively convert any image fields to the standard {id,url,alt} format.
+     */
+    protected function transform_image_fields(&$data, int $depth = 0): void {
+        if ($depth > 50 || !is_array($data)) {
+            return;
+        }
+
+        foreach ($data as $key => &$value) {
+            if ($key === 'image') {
+                if (is_array($value)) {
+                    $value = $this->build_image_object(
+                        $value['id'] ?? ($value['image_id'] ?? null),
+                        $value['url'] ?? ($value['image_url'] ?? ''),
+                        $value['alt'] ?? ''
+                    );
+                } elseif (is_string($value)) {
+                    $value = $this->build_image_object(null, $value);
+                }
+                continue;
+            }
+
+            if ($key === 'featured_image') {
+                if (is_array($value)) {
+                    $value = $this->build_image_object(
+                        $value['id'] ?? null,
+                        $value['url'] ?? '',
+                        $value['alt'] ?? ''
+                    );
+                } else {
+                    $value = $this->build_image_object(null, $value);
+                }
+                continue;
+            }
+
+            if ($key === 'images' && is_array($value)) {
+                foreach ($value as &$img) {
+                    if (is_array($img)) {
+                        $img = $this->build_image_object(
+                            $img['id'] ?? ($img['image_id'] ?? null),
+                            $img['url'] ?? ($img['image_url'] ?? ''),
+                            $img['alt'] ?? ''
+                        );
+                    } else {
+                        $img = $this->build_image_object(null, $img);
+                    }
+                }
+                unset($img);
+                continue;
+            }
+
+            if (in_array($key, ['image_id', 'image_url', 'alt'], true)) {
+                // handled below after loop
+                continue;
+            }
+
+            if (is_array($value)) {
+                $this->transform_image_fields($value, $depth + 1);
+            }
+        }
+        unset($value);
+
+        if (isset($data['image_id']) || isset($data['image_url']) || isset($data['alt'])) {
+            $data['image'] = $this->build_image_object(
+                $data['image_id'] ?? null,
+                $data['image_url'] ?? '',
+                $data['alt'] ?? ''
+            );
+            unset($data['image_id'], $data['image_url'], $data['alt']);
+        }
+    }
+
+    /**
+     * Build taxonomy payloads (categories, tags, custom taxonomies)
+     */
+    protected function get_post_taxonomy_payloads(int $post_id): array {
+        $post_type = get_post_type($post_id);
+        if (!$post_type) {
+            return [];
+        }
+
+        $taxonomies = get_object_taxonomies($post_type, 'objects');
+        if (empty($taxonomies)) {
+            return [];
+        }
+
+        $payloads = [];
+        foreach ($taxonomies as $taxonomy) {
+            if (!is_object($taxonomy) || empty($taxonomy->name)) {
+                continue;
+            }
+
+            // Respect public/show_ui taxonomies to avoid exposing internal ones
+            $is_public = isset($taxonomy->public) ? (bool) $taxonomy->public : true;
+            $show_ui = isset($taxonomy->show_ui) ? (bool) $taxonomy->show_ui : true;
+            if (!$is_public && !$show_ui) {
+                continue;
+            }
+
+            $terms = wp_get_post_terms($post_id, $taxonomy->name);
+            if (is_wp_error($terms) || empty($terms)) {
+                continue;
+            }
+
+            $mapped_terms = array_values(array_filter(array_map(function ($term) {
+                return $this->map_term_payload($term);
+            }, $terms)));
+
+            if (!empty($mapped_terms)) {
+                $payloads[$taxonomy->name] = $mapped_terms;
+            }
+        }
+
+        return $payloads;
     }
 
     protected function normalize_text($value): string {
@@ -4064,8 +4575,7 @@ trait RESTBridge_Content_Parser {
                 case 'woocommerce/product-collection-product-image':
                     $image = $context['product']['image'] ?? $context['featured_image'] ?? [];
                     if (!empty($image['url'])) {
-                        $aggregate['content']['url'] = $image['url'];
-                        $aggregate['content']['image_alt'] = $image['alt'] ?? '';
+                        $aggregate['content']['image'] = $image;
                         $aggregate['_flags']['image'] = true;
                     }
                     break;
@@ -4189,6 +4699,132 @@ trait RESTBridge_Content_Parser {
                 $aggregate['content']['classNames'][] = trim($block['attrs']['className']);
             }
         }
+    }
+
+    /**
+     * Extract preferred product category IDs from a product collection block.
+     *
+     * @param array $collection
+     * @param array $attrs
+     * @return int[]
+     */
+    protected function extract_product_collection_category_ids(array $collection, array $attrs): array {
+        $ids = [];
+
+        $queries = [];
+        if (!empty($collection['query']) && is_array($collection['query'])) {
+            $queries[] = $collection['query'];
+        }
+        if (!empty($attrs['query']) && is_array($attrs['query'])) {
+            $queries[] = $attrs['query'];
+        }
+
+        foreach ($queries as $query) {
+            if (empty($query['taxQuery'])) {
+                continue;
+            }
+
+            $tax_query = $query['taxQuery'];
+
+            // Handle associative array keyed by taxonomy (block editor structure)
+            if (isset($tax_query['product_cat'])) {
+                $ids = array_merge(
+                    $ids,
+                    $this->normalize_tax_query_terms($tax_query['product_cat'])
+                );
+            }
+
+            // Handle indexed array with taxonomy clause arrays
+            if (is_array($tax_query)) {
+                foreach ($tax_query as $clause) {
+                    if (!is_array($clause)) {
+                        continue;
+                    }
+
+                    // Woo blocks sometimes store clauses keyed by taxonomy
+                    if (isset($clause['product_cat'])) {
+                        $ids = array_merge(
+                            $ids,
+                            $this->normalize_tax_query_terms($clause['product_cat'])
+                        );
+                        continue;
+                    }
+
+                    if (
+                        isset($clause['taxonomy'], $clause['terms']) &&
+                        $clause['taxonomy'] === 'product_cat'
+                    ) {
+                        $ids = array_merge(
+                            $ids,
+                            $this->normalize_tax_query_terms($clause)
+                        );
+                    }
+                }
+            }
+        }
+
+        $ids = array_filter(array_map('intval', $ids));
+
+        return array_values(array_unique($ids));
+    }
+
+    /**
+     * Normalize a taxonomy query entry to an array of term IDs.
+     *
+     * @param mixed $clause
+     * @return int[]
+     */
+    protected function normalize_tax_query_terms($clause): array {
+        if (!is_array($clause)) {
+            return [];
+        }
+
+        if (isset($clause['terms']) && is_array($clause['terms'])) {
+            return array_map('intval', $clause['terms']);
+        }
+
+        // Some structures might already be a list of IDs
+        if (isset($clause[0]) && is_numeric($clause[0])) {
+            return array_map('intval', $clause);
+        }
+
+        return [];
+    }
+
+    /**
+     * Resolve a category payload (id/name) for a given product.
+     *
+     * @param int $post_id
+     * @param int[] $preferred_ids
+     * @return array|null
+     */
+    protected function resolve_product_category_for_post(int $post_id, array $preferred_ids = []) {
+        // Use preferred IDs (from block settings) if available
+        if (!empty($preferred_ids)) {
+            foreach ($preferred_ids as $term_id) {
+                $term = get_term($term_id, 'product_cat');
+                if ($term && !is_wp_error($term)) {
+                    return [
+                        'id' => (int) $term->term_id,
+                        'title' => $term->name,
+                    ];
+                }
+            }
+        }
+
+        // Fallback to first product category assigned to the post
+        $terms = get_the_terms($post_id, 'product_cat');
+        if (!is_wp_error($terms) && !empty($terms)) {
+            $term = reset($terms);
+            if ($term instanceof WP_Term) {
+                return [
+                    'id' => (int) $term->term_id,
+                    'title' => $term->name,
+                ];
+            }
+        }
+
+        return null;
     }
 }
 

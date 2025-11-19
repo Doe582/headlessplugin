@@ -21,6 +21,12 @@ class RESTBridge_Products_API {
             'permission_callback' => '__return_true',
         ]);
 
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/products/(?P<id>\d+)/popup', [
+            'methods' => 'GET',
+            'callback' => [$this, 'get_product_popup'],
+            'permission_callback' => '__return_true',
+        ]);
+
         register_rest_route(RESTBRIDGE_API_NAMESPACE, '/products/(?P<id>\d+)', [
             'methods' => 'PUT',
             'callback' => [$this, 'update_product'],
@@ -90,6 +96,32 @@ class RESTBridge_Products_API {
         }
 
         return rest_ensure_response($this->format_product($product));
+    }
+
+    public function get_product_popup(WP_REST_Request $request) {
+        if (!function_exists('WC')) {
+            return new WP_Error('woocommerce_not_active', 'WooCommerce not active', ['status' => 500]);
+        }
+
+        $product_id = (int) $request['id'];
+        $product = wc_get_product($product_id);
+
+        if (!$product) {
+            return new WP_Error('product_not_found', 'Product not found', ['status' => 404]);
+        }
+
+        $detail = RESTBridge_Store_API_Product_Detail::get_instance();
+        if (!$detail) {
+            $detail = new RESTBridge_Store_API_Product_Detail();
+        }
+
+        $payload = $detail->get_popup_payload($product);
+
+        if (empty($payload)) {
+            return new WP_Error('popup_unavailable', 'Popup data could not be generated', ['status' => 500]);
+        }
+
+        return rest_ensure_response($payload);
     }
 
     public function create_product(WP_REST_Request $request) {
@@ -186,6 +218,8 @@ class RESTBridge_Products_API {
             'price' => $product->get_price(),
             'regular_price' => $product->get_regular_price(),
             'sale_price' => $product->get_sale_price(),
+            'average_rating' => number_format((float) $product->get_average_rating(), 2, '.', ''),
+            'review_count' => (int) $product->get_review_count(),
             'description' => $product->get_description(),
             'short_description' => $product->get_short_description(),
             'stock_status' => $product->get_stock_status(),

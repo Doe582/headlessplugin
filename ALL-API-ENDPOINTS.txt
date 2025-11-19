@@ -1,4 +1,94 @@
 ================================================================================
+WOO STOREFRONT API (DEFAULT WOO ENDPOINTS)
+================================================================================
+
+Base URL: http://localhost/styluzawebtx/wp-json/wc/store/v1
+
+Notes:
+- Requires WooCommerce Store API nonce header: X-WC-Store-API-Nonce
+- Sessions/cookies must be sent (use credentials: 'include' in fetch)
+- Guest carts use cookies; logged-in users should send WordPress auth cookies
+
+--------------------------------------------------------------------------------
+1. CART
+--------------------------------------------------------------------------------
+
+GET    /cart
+       Returns current cart contents, totals, coupons, fees, shipping state.
+
+POST   /cart/add-item
+       Body:
+       {
+         "id": 123,                // product or variation ID
+         "quantity": 1,
+         "variation": [
+           {"attribute": "pa_color", "value": "blue"}
+         ]
+       }
+
+POST   /cart/update-item
+       Body:
+       {
+         "key": "a1b2c3d4e5f6",    // cart item key from GET /cart
+         "quantity": 2
+       }
+
+POST   /cart/remove-item
+       Body:
+       {
+         "key": "a1b2c3d4e5f6"
+       }
+
+POST   /cart/apply-coupon
+       Body: { "code": "SAVE10" }
+
+POST   /cart/remove-coupon
+       Body: { "code": "SAVE10" }
+
+Test URLs:
+GET    http://localhost/styluzawebtx/wp-json/wc/store/v1/cart
+POST   http://localhost/styluzawebtx/wp-json/wc/store/v1/cart/add-item
+POST   http://localhost/styluzawebtx/wp-json/wc/store/v1/cart/update-item
+POST   http://localhost/styluzawebtx/wp-json/wc/store/v1/cart/remove-item
+POST   http://localhost/styluzawebtx/wp-json/wc/store/v1/cart/apply-coupon
+POST   http://localhost/styluzawebtx/wp-json/wc/store/v1/cart/remove-coupon
+
+--------------------------------------------------------------------------------
+2. CHECKOUT
+--------------------------------------------------------------------------------
+
+POST   /checkout
+       Body:
+       {
+         "billing_address": {...},
+         "shipping_address": {...},
+         "shipping_method": "flat_rate:1",
+         "payment_method": "cod",
+         "extensions": {}
+       }
+
+Response contains order data. Requires cart populated via /cart endpoints.
+
+--------------------------------------------------------------------------------
+3. PRODUCTS & STORE DATA
+--------------------------------------------------------------------------------
+
+GET    /products
+GET    /products/{id}
+GET    /collections
+GET    /collections/{slug}
+
+(Standard WooCommerce Store API catalogue endpoints.)
+
+--------------------------------------------------------------------------------
+4. SESSION NOTES
+--------------------------------------------------------------------------------
+- To create logged-in orders via Store API, include WordPress auth cookies or send
+  Authorization: Bearer <token> header (token stored in user meta _api_token).
+- For headless clients without browser cookies, capture the set-cookie header from
+  GET /cart and reuse it for subsequent requests so cart/session persists.
+
+================================================================================
 WP REST BRIDGE PLUGIN - COMPLETE API ENDPOINTS DOCUMENTATION
 ================================================================================
 
@@ -257,6 +347,22 @@ POST   /login (public)
        - username (string, required): Username
        - password (string, required): Password
 
+POST   /users/token (public)
+       Body Parameters:
+       - username (string, required): Username or email
+       - password (string, required): Password
+       - label (string, optional): (ignored – legacy)
+
+       Response:
+       {
+         "token_type": "Bearer",
+         "token": "3f5ab2c8ea7d4c8b90f0a1b2c3d4e5f6...",
+         "user_id": 12,
+         "user_login": "john.doe",
+         "user_email": "john@example.com",
+         "issued_at": "2025-11-17T14:22:31+00:00"
+       }
+
 Test URLs:
 GET    http://localhost/wooautopublix/wp-json/restbridge/v1/users
 GET    http://localhost/wooautopublix/wp-json/restbridge/v1/users/1
@@ -265,6 +371,7 @@ POST   http://localhost/wooautopublix/wp-json/restbridge/v1/users
 PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/users/1
 DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/users/1
 POST   http://localhost/wooautopublix/wp-json/restbridge/v1/login
+POST   http://localhost/wooautopublix/wp-json/restbridge/v1/users/token
 
 --------------------------------------------------------------------------------
 7. MEDIA API
@@ -494,6 +601,38 @@ POST   /cart/remove
 POST   /cart/clear
        Parameters: None
 
+--------------------------------------------------------------------------------
+3. WISHLIST API
+--------------------------------------------------------------------------------
+
+GET    /wishlist
+       Parameters: None
+       Response:
+       - items (array): Product summaries
+       - ids (array): Raw product IDs
+       - count (integer): Number of items
+       - logged_in (boolean)
+
+POST   /wishlist/add
+       Body Parameters:
+       - product_id (integer, required)
+
+POST   /wishlist/remove
+       Body Parameters:
+       - product_id (integer, required)
+
+Notes:
+- Works for guests (session-backed) and logged-in users (user meta)
+- Shares storage with theme wishlist (Styluza child)
+
+--------------------------------------------------------------------------------
+4. CART API DETAILS & EXAMPLES
+--------------------------------------------------------------------------------
+
+Authentication (all cart routes):
+- Send `Authorization: Bearer <token>` (token from `/users/token` or `/login`)
+- Optional fallbacks: `X-Bearer-Token` header or `bearer_token` param
+
 Test URLs:
 GET    http://localhost/wooautopublix/wp-json/restbridge/v1/cart
 POST   http://localhost/wooautopublix/wp-json/restbridge/v1/cart/add
@@ -523,7 +662,7 @@ OR
   "key": "cart_item_key",
   "quantity": 3
 }
-2
+
 POST /cart/remove:
 {
   "product_id": 123
@@ -533,8 +672,9 @@ OR
   "key": "cart_item_key"
 }
 
+
 --------------------------------------------------------------------------------
-3. COUPONS API
+4. COUPONS API
 --------------------------------------------------------------------------------
 
 GET    /coupons

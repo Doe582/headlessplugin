@@ -45,6 +45,12 @@ class RESTBridge_Users_API {
             'permission_callback' => '__return_true',
         ]);
 
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/users/token', [
+            'methods' => 'POST',
+            'callback' => [$this, 'generate_user_token'],
+            'permission_callback' => '__return_true',
+        ]);
+
         register_rest_route(RESTBRIDGE_API_NAMESPACE, '/users', [
             'methods' => 'GET',
             'callback' => [$this, 'get_users'],
@@ -245,8 +251,44 @@ public function check_simple_token(WP_REST_Request $request) {
     return !empty($users);
 }
 
+    public function generate_user_token(WP_REST_Request $request) {
+        $params = $request->get_json_params();
+        $username = isset($params['username']) ? sanitize_text_field($params['username']) : sanitize_text_field($request->get_param('username'));
+        $password = isset($params['password']) ? $params['password'] : $request->get_param('password');
+
+        if (empty($username) || empty($password)) {
+            return new WP_Error('missing_credentials', 'Username and password are required', ['status' => 400]);
+        }
+
+        if (!function_exists('wp_authenticate')) {
+            require_once ABSPATH . 'wp-includes/pluggable.php';
+        }
+
+        $user = wp_authenticate($username, $password);
+
+        if (is_wp_error($user)) {
+            return new WP_Error('invalid_credentials', 'Invalid username or password', ['status' => 401]);
+        }
+
+        try {
+            $token = bin2hex(random_bytes(32));
+        } catch (Exception $e) {
+            return new WP_Error('token_generation_failed', 'Unable to generate token', ['status' => 500]);
+        }
+
+        update_user_meta($user->ID, '_api_token', $token);
+
+        return rest_ensure_response([
+            'token_type' => 'Bearer',
+            'token' => $token,
+            'user_id' => $user->ID,
+            'user_login' => $user->user_login,
+            'user_email' => $user->user_email,
+            'issued_at' => gmdate('c'),
+        ]);
+    }
+
 
 
 }
-
 

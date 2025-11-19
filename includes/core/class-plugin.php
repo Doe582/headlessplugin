@@ -15,6 +15,7 @@ class RESTBridge_Plugin {
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-categories-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-tags-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-users-api.php';
+        require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-bearer-token-auth.php';
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-media-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-taxonomies-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-menus-api.php';
@@ -40,11 +41,16 @@ class RESTBridge_Plugin {
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-shipping-zones-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-shipping-methods-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-taxes-api.php';
+        require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-store-api-filters.php';
+        require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-store-api-product-detail.php';
+        require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-store-api-cart-sync.php';
+        require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-wishlist-api.php';
         
         // Content & WooCommerce Managers
         require_once plugin_dir_path(__FILE__) . '../content/class-post-manager.php';
         require_once plugin_dir_path(__FILE__) . '../woocommerce/class-woocommerce-manager.php';
         require_once plugin_dir_path(__FILE__) . '../woocommerce/class-woocommerce-settings.php';
+        require_once plugin_dir_path(__FILE__) . '../woocommerce/class-woocommerce-product-sorting.php';
         require_once plugin_dir_path(__FILE__) . '../admin/class-settings.php';
         
         // Blocks
@@ -154,6 +160,9 @@ class RESTBridge_Plugin {
 
             $taxes_api = new RESTBridge_Taxes_API();
             $taxes_api->register_routes();
+
+            $wishlist_api = new RESTBridge_Wishlist_API();
+            $wishlist_api->register_routes();
         }
     }
 
@@ -170,11 +179,20 @@ class RESTBridge_Plugin {
         if (class_exists('WooCommerce')) {
             new RESTBridge_WooCommerce_Manager();
             new RESTBridge_WooCommerce_Settings();
+            // Initialize product sorting
+            new RESTBridge_WooCommerce_Product_Sorting();
+            // Initialize Store API filters
+            new RESTBridge_Store_API_Filters();
+            // Initialize Store API product detail extension
+            new RESTBridge_Store_API_Product_Detail();
+            // Initialize Store API cart sync (ensures cart visible on frontend)
+            new RESTBridge_Store_API_Cart_Sync();
         }
     }
 
     /**
      * Ensure WooCommerce session and cart are ready for REST requests.
+     * This ensures Store API requests properly initialize sessions for cart sync.
      *
      * @return void
      */
@@ -205,6 +223,14 @@ class RESTBridge_Plugin {
         // Load cart object if needed
         if (empty($wc->cart)) {
             wc_load_cart();
+        }
+
+        // For Store API requests, ensure cart is properly loaded from session
+        if (isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], '/wc/store/v1/') !== false) {
+            // Ensure cart loads from session
+            if ($wc->cart && method_exists($wc->cart, 'get_cart')) {
+                $wc->cart->get_cart();
+            }
         }
 
         // Ensure totals are calculated (important for mini cart)

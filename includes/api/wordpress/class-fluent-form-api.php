@@ -7,15 +7,13 @@
  * integrations continue to run.
  */
 
-use Exception;
-use FluentForm\App\Services\Form\SubmissionHandlerService;
-use FluentForm\Framework\Validator\ValidationException;
-use WP_REST_Request;
-use WP_REST_Response;
-
 if (!defined('ABSPATH')) {
     exit;
 }
+
+// Only use namespaced classes - global classes (Exception, WP_REST_Request, WP_REST_Response) don't need use statements
+use FluentForm\App\Services\Form\SubmissionHandlerService;
+use FluentForm\Framework\Validator\ValidationException;
 
 class RESTBridge_FluentForm_API {
 
@@ -45,7 +43,7 @@ class RESTBridge_FluentForm_API {
             ], 400);
         }
 
-        if (!class_exists('\FluentForm\App\Models\Submission') || !class_exists(SubmissionHandlerService::class)) {
+        if (!class_exists(SubmissionHandlerService::class)) {
             return new WP_REST_Response([
                 'success' => false,
                 'error'   => 'FluentForm plugin is not active or not found.',
@@ -97,7 +95,7 @@ class RESTBridge_FluentForm_API {
                 'error'   => 'Validation failed.',
                 'details' => $exception->getErrors(),
             ], 422);
-        } catch (Exception $exception) {
+        } catch (\Exception $exception) {
             return new WP_REST_Response([
                 'success' => false,
                 'error'   => 'An error occurred while processing the form submission.',

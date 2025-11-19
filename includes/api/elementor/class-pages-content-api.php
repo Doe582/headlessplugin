@@ -173,17 +173,16 @@ class RESTBridge_Pages_Content_API {
                     $widget_settings['description'] = $description;
                 }
                 
-                // Add first image URL (clean, no HTML)
+                // Add first image
                 if (!empty($images) && isset($images[0]['url'])) {
-                    $widget_settings['image_url'] = $images[0]['url'];
+                    $widget_settings['image'] = $this->build_image_object(null, $images[0]['url']);
                 }
                 
-                // Add all image URLs
+                // Add all images
                 if (!empty($images)) {
-                    $image_urls = array_map(function($img) {
-                        return $img['url'];
+                    $widget_settings['images'] = array_map(function($img) {
+                        return $this->build_image_object(null, $img['url']);
                     }, $images);
-                    $widget_settings['images'] = $image_urls;
                 }
                 
                 // Add links
@@ -192,7 +191,7 @@ class RESTBridge_Pages_Content_API {
                 }
                 
                 $current_index = $section_index++;
-                $sections[] = [
+                $section_entry = [
                     'index' => $current_index,
                     'section_number' => $current_index + 1, // Human-readable: 1, 2, 3, etc.
                     'position' => $this->get_section_position($current_index), // "first", "second", "third", etc.
@@ -215,12 +214,15 @@ class RESTBridge_Pages_Content_API {
                     ],
                     'total_columns' => 1,
                 ];
+
+                $this->transform_image_fields($section_entry);
+                $sections[] = $section_entry;
             }
         }
         
         // If no sections found from headings, create one section with all content
         if (empty($sections)) {
-            $sections[] = [
+            $section_entry = [
                 'index' => 0,
                 'section_number' => 1,
                 'position' => 'first',
@@ -246,6 +248,9 @@ class RESTBridge_Pages_Content_API {
                 ],
                 'total_columns' => 1,
             ];
+
+            $this->transform_image_fields($section_entry);
+            $sections[] = $section_entry;
         }
         
         return [
@@ -254,7 +259,7 @@ class RESTBridge_Pages_Content_API {
                 'title' => get_the_title($page->ID),
                 'slug' => $page->post_name,
                 'permalink' => get_permalink($page->ID),
-                'featured_image' => get_the_post_thumbnail_url($page->ID, 'full'),
+                'featured_image' => $this->build_image_object(get_post_thumbnail_id($page->ID)),
             ],
             'sections' => $sections,
             'total_sections' => count($sections),
