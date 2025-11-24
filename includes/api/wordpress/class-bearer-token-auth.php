@@ -10,16 +10,11 @@ class RESTBridge_Bearer_Token_Auth {
 			return $user_id;
 		}
 
-		if (!function_exists('getallheaders')) {
+		$auth = $this->get_authorization_header();
+		if (!$auth) {
 			return $user_id;
 		}
 
-		$headers = getallheaders();
-		if (empty($headers['Authorization'])) {
-			return $user_id;
-		}
-
-		$auth = trim($headers['Authorization']);
 		if (!preg_match('/Bearer\s(\S+)/', $auth, $matches)) {
 			return $user_id;
 		}
@@ -40,6 +35,30 @@ class RESTBridge_Bearer_Token_Auth {
 		wp_set_current_user($user->ID);
 
 		return $user->ID;
+	}
+
+	private function get_authorization_header() {
+		$header = null;
+
+		if (function_exists('getallheaders')) {
+			$headers = getallheaders();
+			foreach ($headers as $key => $value) {
+				if (strcasecmp($key, 'Authorization') === 0) {
+					$header = $value;
+					break;
+				}
+			}
+		}
+
+		if (!$header) {
+			if (!empty($_SERVER['HTTP_AUTHORIZATION'])) {
+				$header = $_SERVER['HTTP_AUTHORIZATION'];
+			} elseif (!empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+				$header = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+			}
+		}
+
+		return $header ? trim($header) : null;
 	}
 }
 

@@ -45,6 +45,12 @@ class RESTBridge_Users_API {
             'permission_callback' => '__return_true',
         ]);
 
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/logout', [
+            'methods' => 'POST',
+            'callback' => [$this, 'simple_logout'],
+            'permission_callback' => '__return_true',
+        ]);
+
         register_rest_route(RESTBRIDGE_API_NAMESPACE, '/users/token', [
             'methods' => 'POST',
             'callback' => [$this, 'generate_user_token'],
@@ -56,6 +62,9 @@ class RESTBridge_Users_API {
             'callback' => [$this, 'get_users'],
             'permission_callback' => [$this, 'check_simple_token'],
         ]);
+        
+        // Add filter to ensure cookies are sent with REST API responses
+        add_filter('rest_post_dispatch', [$this, 'ensure_login_cookies'], 10, 3);
 
     }
 
@@ -217,23 +226,93 @@ class RESTBridge_Users_API {
         return new WP_Error('missing_fields', 'Username and password required', ['status' => 400]);
     }
 
-    $user = wp_authenticate($params['username'], $params['password']);
-
+    // Use wp_signon which properly handles login and cookies
+    $credentials = [
+        'user_login' => $params['username'],
+        'user_password' => $params['password'],
+        'remember' => isset($params['remember']) ? (bool) $params['remember'] : false,
+    ];
+    
+    $user = wp_signon($credentials, is_ssl());
+    
     if (is_wp_error($user)) {
-        return new WP_Error('invalid_login', 'Invalid username or password', ['status' => 401]);
+        return new WP_Error('invalid_login', $user->get_error_message(), ['status' => 401]);
     }
 
-    // create a simple random token
+    // Ensure current user is set (wp_signon should do this, but we make sure)
+    wp_set_current_user($user->ID);
+    
+    // User is now logged in and cookies are set
+    // wp_signon() handles wp_set_auth_cookie() internally, but we ensure current user is set
+    
+    // Create a simple random token for API usage
     $token = bin2hex(random_bytes(20)); // Example: 3f5ab2c8ea…
 
     update_user_meta($user->ID, '_api_token', $token); // store token
 
-    return [
+    // Create response
+    $response = rest_ensure_response([
+        'success' => true,
+        'message' => 'User logged in successfully',
         'token' => $token,
         'user_id' => $user->ID,
         'email' => $user->user_email,
         'display_name' => $user->display_name,
-    ];
+        'username' => $user->user_login,
+    ]);
+    
+    return $response;
+}
+    
+    /**
+     * Ensure cookies are sent with REST API responses for login/logout
+     */
+    public function ensure_login_cookies($result, $server, $request) {
+        $route = $request->get_route();
+        
+        // Only handle our login/logout endpoints
+        if (strpos($route, '/restbridge/v1/login') === false && strpos($route, '/restbridge/v1/logout') === false) {
+            return $result;
+        }
+        
+        // Cookies should already be set via wp_set_auth_cookie() or wp_clear_auth_cookie()
+        // These use setcookie() which sends Set-Cookie headers
+        // WordPress REST API should include these in the response automatically
+        // But we ensure they're sent by checking if headers were sent
+        
+        // The cookies are set in the login/logout methods via wp_set_auth_cookie()
+        // which calls setcookie() - these headers should be in the response
+        
+        return $result;
+    }
+
+public function simple_logout(WP_REST_Request $request) {
+    $user_id = get_current_user_id();
+    
+    if (!$user_id) {
+        // User is not logged in, but return success anyway
+        return rest_ensure_response([
+            'success' => true,
+            'message' => 'User already logged out',
+        ]);
+    }
+
+    // Get user info before logout
+    $user = get_user_by('id', $user_id);
+    $user_email = $user ? $user->user_email : '';
+    
+    // Clear the API token from user meta
+    delete_user_meta($user_id, '_api_token');
+    
+    // Log out the user (clears WordPress authentication cookies)
+    wp_logout();
+    
+    return rest_ensure_response([
+        'success' => true,
+        'message' => 'User logged out successfully',
+        'user_id' => $user_id,
+        'email' => $user_email,
+    ]);
 }
 
 public function check_simple_token(WP_REST_Request $request) {

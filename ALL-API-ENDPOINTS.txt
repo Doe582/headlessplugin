@@ -279,11 +279,432 @@ Account Details Form:
 PUT    /wc/v3/customers/{user_id}
 Body can update name, email, password (use "password" field), billing/shipping data.
 
-Logout:
-GET    /wp-login.php?action=logout&_wpnonce=<nonce>
-Trigger via browser redirect; for headless clients, open this URL in a new tab to clear cookies.
+================================================================================
+LOGIN & LOGOUT - COMPLETE GUIDE
+================================================================================
 
-Notes:
+METHOD 1: BEARER TOKEN AUTHENTICATION (Recommended for Headless)
+
+Step 1: Login and Get Token
+POST   /wp-json/restbridge/v1/users/token
+       Body:
+       {
+         "username": "your_username",
+         "password": "your_password"
+       }
+
+       Response:
+       {
+         "token_type": "Bearer",
+         "token": "3f5ab2c8ea7d4c8b90f0a1b2c3d4e5f6...",
+         "user_id": 12,
+         "user_login": "john.doe",
+         "user_email": "john@example.com",
+         "issued_at": "2025-11-17T14:22:31+00:00"
+       }
+
+       cURL Example:
+       curl -X POST "http://localhost/styluzawebtx/wp-json/restbridge/v1/users/token" \
+         -H "Content-Type: application/json" \
+         -d '{
+           "username": "your_username",
+           "password": "your_password"
+         }'
+
+Step 2: Use Token for Authenticated Requests
+       Include the token in the Authorization header for all authenticated requests:
+       
+       GET    /wp-json/wp/v2/users/me
+       GET    /wp-json/wc/store/v1/cart
+       GET    /wp-json/wc/v3/orders
+       etc.
+
+       cURL Example:
+       curl -X GET "http://localhost/styluzawebtx/wp-json/wp/v2/users/me" \
+         -H "Authorization: Bearer YOUR_TOKEN_HERE"
+
+Step 3: Logout (Clear Token)
+       For headless apps, logout is handled client-side:
+       1. Delete the token from your app's storage (localStorage, sessionStorage, etc.)
+       2. Optionally, you can call the WordPress logout endpoint to clear server-side session:
+       
+       GET    /wp-login.php?action=logout&_wpnonce=<nonce>
+       
+       Note: To get the nonce, you need to be logged in. For headless, just clear the token
+       client-side and the user will be effectively logged out.
+
+       Alternative: Clear token on server (if you want to invalidate it):
+       You can create a custom logout endpoint, or simply clear the token from user meta
+       on the server. For now, client-side token deletion is sufficient.
+
+METHOD 2: SIMPLE LOGIN (Logs User In + Returns Token)
+
+POST   /wp-json/restbridge/v1/login
+       Body:
+       {
+         "username": "your_username",
+         "password": "your_password",
+         "remember": false  // optional, default: false
+       }
+
+       Response:
+       {
+         "success": true,
+         "message": "User logged in successfully",
+         "token": "3f5ab2c8ea7d4c8b90f0a1b2c3d4e5f6...",
+         "user_id": 12,
+         "email": "john@example.com",
+         "display_name": "John Doe",
+         "username": "john.doe"
+       }
+
+       Important: This endpoint ACTUALLY LOGS THE USER IN by setting WordPress 
+       authentication cookies. The user will be logged in for both:
+       - Cookie-based requests (browser automatically sends cookies)
+       - Token-based requests (use the returned token in Authorization header)
+
+       cURL Example:
+       curl -X POST "http://localhost/styluzawebtx/wp-json/restbridge/v1/login" \
+         -H "Content-Type: application/json" \
+         -c cookies.txt \
+         -d '{
+           "username": "your_username",
+           "password": "your_password"
+         }'
+
+       After login, you can use either:
+       - Cookies: Include cookies.txt in subsequent requests (-b cookies.txt)
+       - Token: Use Authorization: Bearer <token> header
+
+LOGOUT ENDPOINT:
+
+POST   /wp-json/restbridge/v1/logout
+       Body: (none required, but user must be logged in)
+
+       Response:
+       {
+         "success": true,
+         "message": "User logged out successfully",
+         "user_id": 12,
+         "email": "john@example.com"
+       }
+
+       This endpoint:
+       - Clears WordPress authentication cookies
+       - Deletes the API token from user meta
+       - Logs the user out completely
+
+       cURL Example:
+       curl -X POST "http://localhost/styluzawebtx/wp-json/restbridge/v1/logout" \
+         -H "Content-Type: application/json" \
+         -b cookies.txt \
+         -c cookies.txt
+
+       Note: After logout, cookies will be cleared. For token-based logout, 
+       you can also just delete the token client-side, but calling this endpoint
+       ensures complete server-side cleanup.
+
+METHOD 3: COOKIE AUTHENTICATION (For Browser-Based Apps)
+
+Step 1: Login via WordPress Login Form
+       POST   /wp-login.php
+       Body (form-data):
+       - log: username
+       - pwd: password
+       - wp-submit: Log In
+       - redirect_to: (optional)
+
+       This will set WordPress authentication cookies in the browser.
+
+Step 2: Use Cookies for Authenticated Requests
+       Include cookies automatically (browser does this):
+       
+       JavaScript Example:
+       fetch('/wp-json/wp/v2/users/me', {
+         credentials: 'include'  // Sends cookies automatically
+       })
+
+       cURL Example (with cookies):
+       curl -X GET "http://localhost/styluzawebtx/wp-json/wp/v2/users/me" \
+         -b cookies.txt \
+         -c cookies.txt
+
+Step 3: Logout
+       GET    /wp-login.php?action=logout&_wpnonce=<nonce>
+       
+       This clears WordPress authentication cookies.
+
+COMPLETE LOGIN/LOGOUT FLOW EXAMPLE
+
+METHOD A: Using /login endpoint (Logs user in + Returns token)
+
+# 1. Login (This actually logs the user in and sets cookies)
+curl -X POST "http://localhost/styluzawebtx/wp-json/restbridge/v1/login" \
+  -H "Content-Type: application/json" \
+  -c cookies.txt \
+  -d '{
+    "username": "testuser",
+    "password": "testpass123"
+  }'
+
+# Response: Save the "token" value
+# {
+#   "success": true,
+#   "message": "User logged in successfully",
+#   "token": "abc123def456...",
+#   "user_id": 5,
+#   "email": "test@example.com",
+#   "display_name": "Test User",
+#   "username": "testuser"
+# }
+
+# 2. Get Current User Info (using cookies - browser sends automatically)
+curl -X GET "http://localhost/styluzawebtx/wp-json/wp/v2/users/me" \
+  -b cookies.txt
+
+# OR using token
+curl -X GET "http://localhost/styluzawebtx/wp-json/wp/v2/users/me" \
+  -H "Authorization: Bearer abc123def456..."
+
+# 3. Get User Orders (using token)
+curl -X GET "http://localhost/styluzawebtx/wp-json/wc/v3/orders?customer=5" \
+  -H "Authorization: Bearer abc123def456..."
+
+# OR using cookies
+curl -X GET "http://localhost/styluzawebtx/wp-json/wc/v3/orders?customer=5" \
+  -b cookies.txt
+
+# 4. Get Cart (Store API - using cookies)
+curl -X GET "http://localhost/styluzawebtx/wp-json/wc/store/v1/cart" \
+  -b cookies.txt \
+  -H "X-WC-Store-API-Nonce: <nonce>"
+
+# OR using token
+curl -X GET "http://localhost/styluzawebtx/wp-json/wc/store/v1/cart" \
+  -H "Authorization: Bearer abc123def456..." \
+  -H "X-WC-Store-API-Nonce: <nonce>"
+
+# 5. Logout (Clears cookies and token)
+curl -X POST "http://localhost/styluzawebtx/wp-json/restbridge/v1/logout" \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -c cookies.txt
+
+# Response:
+# {
+#   "success": true,
+#   "message": "User logged out successfully",
+#   "user_id": 5,
+#   "email": "test@example.com"
+# }
+
+METHOD B: Using /users/token endpoint (Token only, no cookie login)
+
+# 1. Get Token (Does NOT log user in, just returns token)
+curl -X POST "http://localhost/styluzawebtx/wp-json/restbridge/v1/users/token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "testuser",
+    "password": "testpass123"
+  }'
+
+# 2-4. Use token same as Method A (steps 2-4)
+
+# 5. Logout (Client-Side)
+# Simply delete the token from your app's storage
+# No API call needed - token deletion = logout
+
+# OR use the logout endpoint if you have cookies
+curl -X POST "http://localhost/styluzawebtx/wp-json/restbridge/v1/logout" \
+  -H "Content-Type: application/json" \
+  -b cookies.txt
+
+JAVASCRIPT/FETCH EXAMPLES
+
+// Method 1: Login using /login endpoint (Logs user in + Returns token)
+async function login(username, password, remember = false) {
+  const response = await fetch('http://localhost/styluzawebtx/wp-json/restbridge/v1/login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include', // Important: Include cookies
+    body: JSON.stringify({ username, password, remember })
+  });
+  
+  const data = await response.json();
+  
+  if (data.success && data.token) {
+    // Store token in localStorage or sessionStorage
+    localStorage.setItem('auth_token', data.token);
+    localStorage.setItem('user_id', data.user_id);
+    localStorage.setItem('user_email', data.email);
+    localStorage.setItem('user_name', data.display_name);
+    // User is now logged in (cookies are set automatically)
+    return data;
+  }
+  
+  throw new Error(data.message || 'Login failed');
+}
+
+// Method 2: Get token only (Does NOT log user in)
+async function getToken(username, password) {
+  const response = await fetch('http://localhost/styluzawebtx/wp-json/restbridge/v1/users/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ username, password })
+  });
+  
+  const data = await response.json();
+  
+  if (data.token) {
+    // Store token in localStorage or sessionStorage
+    localStorage.setItem('auth_token', data.token);
+    localStorage.setItem('user_id', data.user_id);
+    return data;
+  }
+  
+  throw new Error('Token generation failed');
+}
+
+// Make Authenticated Request (using token)
+async function getCurrentUser() {
+  const token = localStorage.getItem('auth_token');
+  
+  const response = await fetch('http://localhost/styluzawebtx/wp-json/wp/v2/users/me', {
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  });
+  
+  return await response.json();
+}
+
+// Make Authenticated Request (using cookies - if logged in via /login)
+async function getCurrentUserWithCookies() {
+  const response = await fetch('http://localhost/styluzawebtx/wp-json/wp/v2/users/me', {
+    credentials: 'include' // Sends cookies automatically
+  });
+  
+  return await response.json();
+}
+
+// Logout (Server-side logout - clears cookies and token)
+async function logout() {
+  try {
+    const response = await fetch('http://localhost/styluzawebtx/wp-json/restbridge/v1/logout', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include' // Send cookies to logout
+    });
+    
+    const data = await response.json();
+    
+    // Clear token from storage
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('user_id');
+    localStorage.removeItem('user_email');
+    localStorage.removeItem('user_name');
+    
+    return data;
+  } catch (error) {
+    // Even if API call fails, clear local storage
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('user_id');
+    localStorage.removeItem('user_email');
+    localStorage.removeItem('user_name');
+    throw error;
+  }
+}
+
+// Simple client-side logout (just clears token)
+function logoutClientSide() {
+  localStorage.removeItem('auth_token');
+  localStorage.removeItem('user_id');
+  localStorage.removeItem('user_email');
+  localStorage.removeItem('user_name');
+  // User is now logged out (if using token-based auth)
+}
+
+TESTING WITH CURL - COMPLETE EXAMPLES
+
+# Method 1: Login using /login endpoint (Logs user in + Returns token)
+curl -X POST "http://localhost/styluzawebtx/wp-json/restbridge/v1/login" \
+  -H "Content-Type: application/json" \
+  -c cookies.txt \
+  -d '{"username": "admin", "password": "admin123"}'
+
+# Response includes token - save it for token-based requests
+# Cookies are saved to cookies.txt for cookie-based requests
+
+# Get Current User (using cookies - after /login)
+curl -X GET "http://localhost/styluzawebtx/wp-json/wp/v2/users/me" \
+  -b cookies.txt
+
+# OR using token
+curl -X GET "http://localhost/styluzawebtx/wp-json/wp/v2/users/me" \
+  -H "Authorization: Bearer TOKEN"
+
+# Get User Orders (using token)
+curl -X GET "http://localhost/styluzawebtx/wp-json/wc/v3/orders?customer=1" \
+  -H "Authorization: Bearer TOKEN"
+
+# OR using cookies
+curl -X GET "http://localhost/styluzawebtx/wp-json/wc/v3/orders?customer=1" \
+  -b cookies.txt
+
+# Get Customer Profile
+curl -X GET "http://localhost/styluzawebtx/wp-json/wc/v3/customers/1" \
+  -H "Authorization: Bearer TOKEN"
+
+# Update Customer Profile
+curl -X PUT "http://localhost/styluzawebtx/wp-json/wc/v3/customers/1" \
+  -H "Authorization: Bearer TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "first_name": "John",
+    "last_name": "Doe",
+    "email": "john@example.com"
+  }'
+
+# Get Cart (using cookies)
+curl -X GET "http://localhost/styluzawebtx/wp-json/wc/store/v1/cart" \
+  -b cookies.txt \
+  -H "X-WC-Store-API-Nonce: <nonce>"
+
+# OR using token
+curl -X GET "http://localhost/styluzawebtx/wp-json/wc/store/v1/cart" \
+  -H "Authorization: Bearer TOKEN" \
+  -H "X-WC-Store-API-Nonce: <nonce>"
+
+# Logout (Clears cookies and token)
+curl -X POST "http://localhost/styluzawebtx/wp-json/restbridge/v1/logout" \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -c cookies.txt
+
+# Method 2: Get token only (Does NOT log user in)
+curl -X POST "http://localhost/styluzawebtx/wp-json/restbridge/v1/users/token" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "admin123"}'
+
+# Use token same as Method 1 (steps above)
+
+NOTES:
+- /wp-json/restbridge/v1/login: Actually logs the user in (sets WordPress cookies) AND returns a token
+- /wp-json/restbridge/v1/users/token: Only returns a token, does NOT log user in
+- /wp-json/restbridge/v1/logout: Logs user out (clears cookies and token)
+- Store the token securely (localStorage, sessionStorage, or secure cookie)
+- Include "Authorization: Bearer <token>" header in all authenticated requests
+- Token is stored in user meta as "_api_token"
+- After /login, you can use either cookies OR token for authenticated requests
+- For logout, use /wp-json/restbridge/v1/logout endpoint OR delete token client-side
+- Token persists until manually deleted or user meta is cleared
+- Use HTTPS in production to protect tokens in transit
 - Call /wp/v2/users/me first to get the authenticated user ID, then reuse it for Woo endpoints.
 - All Woo v3 endpoints support ?_fields=... to limit payload size.
 - Combine responses client-side to build the My Account dashboard (profile card, quick links, stats).
@@ -1496,6 +1917,8 @@ POST   /users
 PUT    /users/{id}
 DELETE /users/{id}
 POST   /login
+POST   /logout
+POST   /users/token
 
 GET    /media
 GET    /media/{id}
