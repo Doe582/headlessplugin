@@ -309,8 +309,12 @@ class RESTBridge_Store_API_Product_Detail {
             return $response;
         }
 
-        // Only handle single product requests (with ID in route)
+        // Normalize price data for collection responses first (no product ID in route)
         if (!preg_match('#/wc/store/v1/products/(\d+)#', $route, $matches)) {
+            $collection_data = $this->maybe_normalize_products_collection_response($response);
+            if ($collection_data !== null) {
+                $response->set_data($collection_data);
+            }
             return $response;
         }
 
@@ -652,12 +656,19 @@ class RESTBridge_Store_API_Product_Detail {
                 
                 $attribute_options = [];
                 foreach ($terms as $term) {
-                    $attribute_options[] = [
+                    $option = [
                         'id' => $term->term_id,
                         'name' => $term->name,
                         'slug' => $term->slug,
                         'description' => $term->description,
                     ];
+
+                    $size_number = $this->get_size_number_from_term($term);
+                    if ($size_number !== null) {
+                        $option['size_number'] = $size_number;
+                    }
+
+                    $attribute_options[] = $option;
                 }
 
                 $attributes[] = [
@@ -1395,6 +1406,11 @@ class RESTBridge_Store_API_Product_Detail {
                         'slug' => $term->slug,
                     ];
 
+                    $size_number = $this->get_size_number_from_term($term);
+                    if ($size_number !== null) {
+                        $option['size_number'] = $size_number;
+                    }
+
                     if ($type === 'color') {
                         $option['color'] = $this->extract_color_from_term($term);
                     }
@@ -1455,6 +1471,7 @@ class RESTBridge_Store_API_Product_Detail {
             'pa_color',
             'styluza_color_value',
             '_color',
+            '_styluza_wc_color',
         ];
 
         foreach ($meta_keys as $key) {
@@ -1494,6 +1511,26 @@ class RESTBridge_Store_API_Product_Detail {
         }
 
         return $this->generate_color_from_name($name);
+    }
+
+    /**
+     * Retrieve numeric size value stored on attribute terms.
+     */
+    private function get_size_number_from_term($term) {
+        if (!$term || !isset($term->term_id)) {
+            return null;
+        }
+
+        $value = get_term_meta($term->term_id, '_styluza_wc_size_number', true);
+        if ($value === '' || $value === null) {
+            return null;
+        }
+
+        if (is_numeric($value)) {
+            $value = (string) (0 + $value);
+        }
+
+        return sanitize_text_field((string) $value);
     }
 
     /**
@@ -2029,6 +2066,96 @@ class RESTBridge_Store_API_Product_Detail {
     }
 
     /**
+     * Normalize price fields for product collection responses (e.g. /wc/store/v1/products).
+     *
+     * @param WP_REST_Response $response
+     * @return array|null
+     */
+    private function maybe_normalize_products_collection_response($response) {
+        if (!($response instanceof WP_REST_Response)) {
+            return null;
+        }
+
+        try {
+            $data = $response->get_data();
+        } catch (Exception $e) {
+            return null;
+        } catch (Error $e) {
+            return null;
+        }
+
+        $data = $this->convert_response_to_array($data);
+        if ($data === null) {
+            return null;
+        }
+
+        $modified = false;
+
+        // Scenario 1: top-level array of products
+        if ($this->is_sequential_array($data)) {
+            foreach ($data as $index => $product) {
+                $normalized = $this->normalize_product_entry_prices($product);
+                if ($normalized !== $product) {
+                    $data[$index] = $normalized;
+                    $modified = true;
+                }
+            }
+        }
+
+        // Scenario 2: objects nested in 'products' key (e.g. search endpoints)
+        if (isset($data['products']) && is_array($data['products'])) {
+            foreach ($data['products'] as $index => $product) {
+                $normalized = $this->normalize_product_entry_prices($product);
+                if ($normalized !== $product) {
+                    $data['products'][$index] = $normalized;
+                    $modified = true;
+                }
+            }
+        }
+
+        return $modified ? $data : null;
+    }
+
+    private function normalize_product_entry_prices($product_entry) {
+        $was_object = is_object($product_entry);
+        if ($was_object) {
+            $product_entry = (array) $product_entry;
+        }
+
+        if (!is_array($product_entry)) {
+            return $was_object ? (object) $product_entry : $product_entry;
+        }
+
+        if (isset($product_entry['prices'])) {
+            $product_entry['prices'] = $this->normalize_store_api_prices($product_entry['prices']);
+        }
+
+        return $was_object ? (object) $product_entry : $product_entry;
+    }
+
+    private function convert_response_to_array($data) {
+        if (is_array($data)) {
+            return $data;
+        }
+
+        if (is_object($data)) {
+            return (array) $data;
+        }
+
+        return null;
+    }
+
+    private function is_sequential_array($value) {
+        if (!is_array($value)) {
+            return false;
+        }
+        if ($value === []) {
+            return true;
+        }
+        return array_keys($value) === range(0, count($value) - 1);
+    }
+
+    /**
      * Provide metadata for theme's custom Buy Now button so headless UI can render it
      */
     public function register_store_api_extensions() {
@@ -2038,7 +2165,7 @@ class RESTBridge_Store_API_Product_Detail {
 
         woocommerce_store_api_register_endpoint_data([
             'endpoint' => ProductSchema::IDENTIFIER,
-            'namespace' => 'headlessplugin',
+            'namespace' => 'styluza',
             'schema_callback' => [$this, 'get_store_api_extension_schema'],
             'data_callback' => [$this, 'build_store_api_extension_data'],
             'schema_type' => ARRAY_A,
@@ -2068,6 +2195,11 @@ class RESTBridge_Store_API_Product_Detail {
                 'type' => 'object',
                 'context' => ['view'],
                 'readonly' => true,
+                'properties' => [
+                    'label' => [
+                        'type' => 'string',
+                    ],
+                ],
             ],
             'tax_notice' => [
                 'description' => __('Additional text to display alongside prices when taxes are included.', 'headlessplugin'),
@@ -2125,30 +2257,9 @@ class RESTBridge_Store_API_Product_Detail {
     }
 
     private function get_buy_now_button_data($product) {
-        $enabled = has_action('woocommerce_after_add_to_cart_button', 'styluza_add_buy_now_button');
         $label = apply_filters('styluza_buy_now_button_label', __('BUY NOW', 'twentytwentyfive-child'), $product);
-
-        $style = [
-            'background_color' => '#4CAF50',
-            'text_color' => '#FFFFFF',
-            'padding' => '1rem',
-            'border_radius' => '4px',
-            'width' => '100%',
-            'font_weight' => '600',
-        ];
-
-        $ajax = [
-            'action' => 'styluza_buy_now',
-            'endpoint' => admin_url('admin-ajax.php'),
-            'nonce' => wp_create_nonce('styluza-buy-now'),
-            'requires_variation' => $product->is_type('variable'),
-        ];
-
         return [
-            'enabled' => (bool) $enabled,
             'label' => $label,
-            'style' => $style,
-            'ajax' => $ajax,
         ];
     }
 

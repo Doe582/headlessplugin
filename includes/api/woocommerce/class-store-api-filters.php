@@ -43,7 +43,6 @@ class RESTBridge_Store_API_Filters {
         self::$has_invalid_filter = false;
 
         $this->normalize_stock_status($request);
-        $this->normalize_category_param($request);
         $this->normalize_price_filters($request);
         $this->map_taxonomy_filters($request);
         $this->normalize_sorting_param($request);
@@ -309,34 +308,30 @@ class RESTBridge_Store_API_Filters {
         }
     }
 
-    /**
-     * Allow comma-separated category filters.
-     */
-    private function normalize_category_param(WP_REST_Request $request) {
-        $value = $request->get_param('category');
-        if (empty($value)) {
-            return;
-        }
-
-        $request->set_param('category', $this->normalize_list_param($value));
-    }
 
     /**
      * Strip currency symbols and keep numeric data for price filters.
      */
     private function normalize_price_filters(WP_REST_Request $request) {
+        $decimals = function_exists('wc_get_price_decimals') ? (int) wc_get_price_decimals() : 2;
+        $decimals = $decimals >= 0 ? $decimals : 2;
+        $multiplier = pow(10, $decimals);
+
         foreach (['min_price', 'max_price'] as $param) {
             $value = $request->get_param($param);
             if (null === $value || '' === $value) {
                 continue;
             }
 
-            $numeric = preg_replace('/[^0-9\.]/', '', (string) $value);
+            $numeric = preg_replace('/[^0-9\.\-]/', '', (string) $value);
             if ($numeric === '') {
                 continue;
             }
 
-            $request->set_param($param, $numeric);
+            $float_value = (float) $numeric;
+            $minor_units = (string) (int) round($float_value * $multiplier);
+
+            $request->set_param($param, $minor_units);
         }
     }
 
@@ -344,9 +339,16 @@ class RESTBridge_Store_API_Filters {
      * Convert comma separated strings into sanitized arrays.
      */
     private function normalize_list_param($value) {
+        if ($value === null) {
+            return [];
+        }
+
         if (is_array($value)) {
             $list = $value;
         } elseif (is_string($value)) {
+            if ($value === '') {
+                return [];
+            }
             $list = preg_split('/[,\|]/', $value);
         } else {
             $list = [(string) $value];
@@ -434,18 +436,26 @@ class RESTBridge_Store_API_Filters {
                 continue;
             }
 
-            if ($this->is_reserved_param($param)) {
-                continue;
-            }
-
             if ($value === null || $value === '' || $value === []) {
                 continue;
             }
 
-            // Direct match (color => pa_color)
+            // Direct match (includes taxonomies starting with underscores)
             $taxonomy = $this->get_taxonomy_name($param);
             if ($taxonomy) {
+                // Never treat the Store API's category param as a taxonomy filter.
+                // WooCommerce already handles it internally and mapping it here
+                // causes the query to look at the default WP "category" taxonomy
+                // instead of "product_cat", which prevents results from matching.
+                if ($param === 'category') {
+                    continue;
+                }
+
                 $filters[$param] = $param;
+                continue;
+            }
+
+            if ($this->is_reserved_param($param)) {
                 continue;
             }
 
@@ -616,6 +626,10 @@ class RESTBridge_Store_API_Filters {
             }
         }
     }
+
+    /**
+     * Apply taxonomy query for resolved category IDs
+     */
 
     /**
      * Handle sorting and add sort_options to response

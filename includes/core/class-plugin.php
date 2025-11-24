@@ -21,6 +21,7 @@ class RESTBridge_Plugin {
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-menus-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-custom-post-types-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-fluent-form-api.php';
+        require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-html-api.php';
         
         // Elementor & Gutenberg APIs
         require_once plugin_dir_path(__FILE__) . '../api/elementor/class-content-parser-trait.php';
@@ -45,6 +46,7 @@ class RESTBridge_Plugin {
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-store-api-product-detail.php';
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-store-api-cart-sync.php';
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-wishlist-api.php';
+        require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-product-filters-api.php';
         
         // Content & WooCommerce Managers
         require_once plugin_dir_path(__FILE__) . '../content/class-post-manager.php';
@@ -107,6 +109,9 @@ class RESTBridge_Plugin {
         $cpt_api = new RESTBridge_Custom_Post_Types_API();
         $cpt_api->register_routes();
 
+        $html_api = new RESTBridge_HTML_API();
+        $html_api->register_routes();
+
         // FluentForm API
         if (class_exists('\FluentForm\App\Models\Submission')) {
             $fluent_form_api = new RESTBridge_FluentForm_API();
@@ -163,6 +168,9 @@ class RESTBridge_Plugin {
 
             $wishlist_api = new RESTBridge_Wishlist_API();
             $wishlist_api->register_routes();
+
+            $product_filters_api = new RESTBridge_Product_Filters_API();
+            $product_filters_api->register_routes();
         }
     }
 

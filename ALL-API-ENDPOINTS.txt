@@ -72,21 +72,225 @@ Response contains order data. Requires cart populated via /cart endpoints.
 --------------------------------------------------------------------------------
 3. PRODUCTS & STORE DATA
 --------------------------------------------------------------------------------
+Base URL: http://localhost/styluzawebtx/wp-json/wc/store/v1
 
 GET    /products
-GET    /products/{id}
-GET    /collections
-GET    /collections/{slug}
+       Query params:
+       - page, per_page (default 1 / 10)
+       - search (matches product title/description)
+       - category, tag, attribute filters (see section 4)
+       - on_sale, featured, stock_status
+       - orderby=price|price-desc|rating|newest etc.
+       Sample curl:
+       curl -X GET "http://localhost/styluzawebtx/wp-json/wc/store/v1/products?per_page=12&page=1"
 
-(Standard WooCommerce Store API catalogue endpoints.)
+GET    /products/{id}
+       Returns the complete Store API product payload including prices, images,
+       variations, stock, add-to-cart data, links, etc.
+       curl -X GET http://localhost/styluzawebtx/wp-json/wc/store/v1/products/210
+
+GET    /products/{id}/variations
+       Available for variable products; supports page/per_page.
+
+GET    /collections
+       Returns all Store API collections (featured, top-rated, new arrivals, etc.).
+       Each collection describes slug, label, description, default ordering.
+
+GET    /collections/{slug}
+       Query parameters: page, per_page, orderby (same as /products).
+       Returns products scoped to the collection logic (e.g., featured products).
+       Sample curl:
+       curl -X GET "http://localhost/styluzawebtx/wp-json/wc/store/v1/collections/featured?per_page=8"
+
+HEADERS:
+- X-WC-Store-API-Nonce: required when calling from same origin with cookies.
+- Authorization: Bearer <token> (optional, maps to logged-in user).
+
+NOTES:
+- All responses include pagination headers (`X-WP-Total`, `X-WP-TotalPages`).
+- Use `?_fields[]=id&_fields[]=name` to limit payload size if needed.
+- Combine with section 4 filters for taxonomy/price filtering.
 
 --------------------------------------------------------------------------------
-4. SESSION NOTES
+4. PRODUCT FILTERS (Store API)
+--------------------------------------------------------------------------------
+
+The Store API products endpoint supports dynamic filtering via query parameters.
+
+Taxonomy Filters:
+All taxonomy filters accept comma-separated term IDs, slugs, or names (case-insensitive).
+The filter will try to match in this order: term ID → slug → name.
+
+Color Filter:
+GET    /products?color=Red,Blue
+GET    /products?color=red,blue
+GET    /products?color=1,2,3
+
+Size Filter:
+GET    /products?size=Small,Medium,Large
+GET    /products?size=small,medium,large
+GET    /products?size=5,6,7
+
+Region Filter:
+GET    /products?region=Rajasthan,Gujarat
+GET    /products?region=rajasthan,gujarat
+GET    /products?region=10,11
+
+Fabric Filter:
+GET    /products?fabric=Silk,Cotton
+GET    /products?fabric=silk,cotton
+GET    /products?fabric=20,21
+
+Stock Status Filter:
+GET    /products?stock_status=instock
+Values: instock, outofstock, onbackorder
+
+On Sale Filter:
+GET    /products?on_sale=true
+Values: true, 1, false, 0
+
+Price Range Filters:
+GET    /products?min_price=1000&max_price=50000
+GET    /products?min_price=0
+GET    /products?max_price=10000
+
+Category Filter:
+GET    /products?category=sarees,lehengas
+GET    /products?category=1,2,3
+
+Combining Multiple Filters:
+GET    /products?color=red&size=M&fabric=silk&min_price=1000&max_price=50000&stock_status=instock&on_sale=true
+
+Taxonomy Naming:
+The plugin automatically detects taxonomy names using:
+1. pa_{name} - WooCommerce product attribute format (e.g., pa_color, pa_size)
+2. product_{name} - Custom taxonomy format (e.g., product_color, product_size)
+3. {name} - Direct name (e.g., color, size)
+
+Sort Options:
+The API response includes sort_options field with available sorting:
+- menu_order - Default sorting (as set in admin)
+- popularity - Sort by popularity
+- rating - Sort by average rating
+- date - Sort by latest (newest first)
+- price - Sort by price: low to high
+- price-desc - Sort by price: high to low
+- featured - Sort by Featured (custom option)
+
+Example Response:
+{
+  "products": [...],
+  "sort_options": [
+    {"value": "menu_order", "label": "Default sorting"},
+    {"value": "popularity", "label": "Sort by popularity"},
+    ...
+  ]
+}
+
+Complete Example:
+GET    /products?color=red,blue&size=M,L&region=rajasthan&fabric=silk,cotton&min_price=1000&max_price=50000&stock_status=instock&on_sale=true&per_page=12&page=1
+
+Notes:
+- All taxonomy filters support both term IDs (numeric) and slugs (text)
+- Multiple values in taxonomy filters are comma-separated
+- Price filters use the product's _price meta field
+- Stock status filter checks the _stock_status meta field
+- On sale filter uses WooCommerce's built-in sale detection
+- All filters are optional and can be used independently or in combination
+- Sort options are automatically included in all product listing responses
+- The featured sort option is a custom addition that filters and sorts featured products
+
+--------------------------------------------------------------------------------
+5. SESSION NOTES
 --------------------------------------------------------------------------------
 - To create logged-in orders via Store API, include WordPress auth cookies or send
   Authorization: Bearer <token> header (token stored in user meta _api_token).
 - For headless clients without browser cookies, capture the set-cookie header from
   GET /cart and reuse it for subsequent requests so cart/session persists.
+
+--------------------------------------------------------------------------------
+6. MY ACCOUNT DATA (DEFAULT WORDPRESS + WOO REST)
+--------------------------------------------------------------------------------
+Base URL: http://localhost/styluzawebtx/wp-json
+
+Authentication:
+- Send logged-in WP cookies or Authorization: Bearer <token> (token created via /restbridge/v1/users/token).
+- WooCommerce v3 endpoints also accept application passwords or consumer key/secret if preferred.
+
+Dashboard / Profile Card:
+GET    /wp/v2/users/me?context=edit
+Headers: X-WP-Nonce (or Authorization header)
+Returns: name, username, email, avatar_urls, meta (first_name, last_name, billing/shipping IDs).
+Sample curl:
+curl -X GET \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  https://<SITE>/wp-json/wp/v2/users/me?context=edit
+
+Customer Profile + Addresses:
+GET    /wc/v3/customers/{user_id}
+PUT    /wc/v3/customers/{user_id}
+Payload fields:
+{
+  "first_name": "Sophia",
+  "last_name": "Water",
+  "billing": {...},
+  "shipping": {...}
+}
+Use GET result for the left sidebar (avatar/email) and Address tab.
+Sample curl (GET):
+curl -X GET \
+  -H "Authorization: Bearer <TOKEN>" \
+  https://<SITE>/wp-json/wc/v3/customers/<USER_ID>
+
+Sample curl (PUT):
+curl -X PUT \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{...payload...}' \
+  https://<SITE>/wp-json/wc/v3/customers/<USER_ID>
+
+Orders List:
+GET    /wc/v3/orders?customer={user_id}&per_page=20&status=any
+Optional params: status=completed,pending | page=2 | orderby=date
+Response includes total/count for Dashboard cards.
+Sample curl:
+curl -X GET \
+  -H "Authorization: Bearer <TOKEN>" \
+  "https://<SITE>/wp-json/wc/v3/orders?customer=<USER_ID>&per_page=20&status=any"
+
+Single Order Detail:
+GET    /wc/v3/orders/{order_id}
+Use for Order detail view, includes billing/shipping, line_items, totals, downloadable items.
+Sample curl:
+curl -X GET \
+  -H "Authorization: Bearer <TOKEN>" \
+  https://<SITE>/wp-json/wc/v3/orders/<ORDER_ID>
+
+Customer Downloads:
+GET    /wc/v3/customers/{user_id}/downloads
+Use for "Download" tab (returns product name, download_url, access_expires).
+Sample curl:
+curl -X GET \
+  -H "Authorization: Bearer <TOKEN>" \
+  https://<SITE>/wp-json/wc/v3/customers/<USER_ID>/downloads
+
+Account Details Form:
+PUT    /wc/v3/customers/{user_id}
+Body can update name, email, password (use "password" field), billing/shipping data.
+
+Logout:
+GET    /wp-login.php?action=logout&_wpnonce=<nonce>
+Trigger via browser redirect; for headless clients, open this URL in a new tab to clear cookies.
+
+Notes:
+- Call /wp/v2/users/me first to get the authenticated user ID, then reuse it for Woo endpoints.
+- All Woo v3 endpoints support ?_fields=... to limit payload size.
+- Combine responses client-side to build the My Account dashboard (profile card, quick links, stats).
+- Store API session check example:
+curl -X GET \
+  -H "Authorization: Bearer <TOKEN>" \
+  https://<SITE>/wp-json/wc/store/v1/cart
 
 ================================================================================
 WP REST BRIDGE PLUGIN - COMPLETE API ENDPOINTS DOCUMENTATION
@@ -224,81 +428,6 @@ POST   http://localhost/wooautopublix/wp-json/restbridge/v1/comments
 PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/comments/789
 DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/comments/789
 
---------------------------------------------------------------------------------
-4. CATEGORIES API
---------------------------------------------------------------------------------
-
-GET    /categories
-       Parameters:
-       - hide_empty (boolean, optional): Hide empty categories (default: false)
-       - orderby (string, optional): Order by field (default: name)
-       - order (string, optional): ASC or DESC (default: ASC)
-       - parent (integer, optional): Parent category ID
-       - search (string, optional): Search term
-
-GET    /categories/{id}
-       Parameters: None
-
-POST   /categories (requires auth)
-       Body Parameters:
-       - name (string, required): Category name
-       - description (string, optional): Category description
-       - parent (integer, optional): Parent category ID
-       - slug (string, optional): Category slug
-
-PUT    /categories/{id} (requires auth)
-       Body Parameters:
-       - name (string, optional): Category name
-       - description (string, optional): Category description
-       - parent (integer, optional): Parent category ID
-       - slug (string, optional): Category slug
-
-DELETE /categories/{id} (requires auth)
-       Parameters:
-       - force (boolean, optional): Force delete (default: false)
-
-Test URLs:
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/categories
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/categories/1
-POST   http://localhost/wooautopublix/wp-json/restbridge/v1/categories
-PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/categories/1
-DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/categories/1
-
---------------------------------------------------------------------------------
-5. TAGS API
---------------------------------------------------------------------------------
-
-GET    /tags
-       Parameters:
-       - hide_empty (boolean, optional): Hide empty tags (default: false)
-       - orderby (string, optional): Order by field (default: name)
-       - order (string, optional): ASC or DESC (default: ASC)
-       - search (string, optional): Search term
-
-GET    /tags/{id}
-       Parameters: None
-
-POST   /tags (requires auth)
-       Body Parameters:
-       - name (string, required): Tag name
-       - description (string, optional): Tag description
-       - slug (string, optional): Tag slug
-
-PUT    /tags/{id} (requires auth)
-       Body Parameters:
-       - name (string, optional): Tag name
-       - description (string, optional): Tag description
-       - slug (string, optional): Tag slug
-
-DELETE /tags/{id} (requires auth)
-       Parameters: None
-
-Test URLs:
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/tags
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/tags/5
-POST   http://localhost/wooautopublix/wp-json/restbridge/v1/tags
-PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/tags/5
-DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/tags/5
 
 --------------------------------------------------------------------------------
 6. USERS API
@@ -529,80 +658,7 @@ WOOCOMMERCE API ENDPOINTS
 ================================================================================
 
 --------------------------------------------------------------------------------
-1. PRODUCTS API
---------------------------------------------------------------------------------
-
-GET    /products
-       Parameters:
-       - per_page (integer, optional): Number of products (default: 10)
-       - page (integer, optional): Page number (default: 1)
-       - search (string, optional): Search term
-       - category (string, optional): Product category slug
-       - status (string, optional): Product status (default: publish)
-       - orderby (string, optional): Order by field (default: date)
-       - order (string, optional): ASC or DESC (default: DESC)
-
-GET    /products/{id}
-       Parameters: None
-
-POST   /products (requires auth)
-       Body Parameters:
-       - name (string, required): Product name
-       - description (string, optional): Product description
-       - short_description (string, optional): Short description
-       - price (float, optional): Product price
-       - status (string, optional): Product status (default: draft)
-
-PUT    /products/{id} (requires auth)
-       Body Parameters:
-       - name (string, optional): Product name
-       - description (string, optional): Product description
-       - short_description (string, optional): Short description
-       - price (float, optional): Product price
-       - status (string, optional): Product status
-
-DELETE /products/{id} (requires auth)
-       Parameters:
-       - force (boolean, optional): Force delete (default: false)
-
-Test URLs:
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/products
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/products?per_page=10&category=electronics
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/products/123
-POST   http://localhost/wooautopublix/wp-json/restbridge/v1/products
-PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/products/123
-DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/products/123
-
---------------------------------------------------------------------------------
-2. CART API
---------------------------------------------------------------------------------
-
-GET    /cart
-       Parameters: None
-
-POST   /cart/add
-       Body Parameters:
-       - product_id (integer, required): Product ID
-       - quantity (integer, optional): Quantity (default: 1)
-       - variation_id (integer, optional): Variation ID (for variable products)
-       - variation (object, optional): Variation attributes (e.g., {"color": "red", "size": "large"})
-
-PUT    /cart/update
-       Body Parameters:
-       - key (string, optional): Cart item key OR
-       - product_id (integer, optional): Product ID
-       - quantity (integer, required): New quantity (0 removes item)
-
-POST   /cart/remove
-       Body Parameters:
-       - key (string, optional): Cart item key OR
-       - product_id (integer, optional): Product ID
-
-POST   /cart/clear
-       Parameters: None
-
---------------------------------------------------------------------------------
-3. WISHLIST API
+1. WISHLIST API
 --------------------------------------------------------------------------------
 
 GET    /wishlist
@@ -624,57 +680,106 @@ POST   /wishlist/remove
 Notes:
 - Works for guests (session-backed) and logged-in users (user meta)
 - Shares storage with theme wishlist (Styluza child)
+- Base URLs:
+  - GET  http://localhost/styluzawebtx/wp-json/restbridge/v1/wishlist
+  - POST http://localhost/styluzawebtx/wp-json/restbridge/v1/wishlist/add
+  - POST http://localhost/styluzawebtx/wp-json/restbridge/v1/wishlist/remove
+- Examples:
+  - Add to wishlist:
+    ```json
+    {
+      "product_id": 123
+    }
+    ```
+  - Remove from wishlist:
+    ```json
+    {
+      "product_id": 123
+    }
+    ```
 
 --------------------------------------------------------------------------------
-4. CART API DETAILS & EXAMPLES
+4. PRODUCT FILTERS API
 --------------------------------------------------------------------------------
 
-Authentication (all cart routes):
-- Send `Authorization: Bearer <token>` (token from `/users/token` or `/login`)
-- Optional fallbacks: `X-Bearer-Token` header or `bearer_token` param
+GET    /product-filters
+       Parameters: None
+       Response:
+       {
+         "categories": [
+           {
+             "id": 1,
+             "name": "Sarees",
+             "slug": "sarees",
+             "count": 150
+           }
+         ],
+         "price_range": {
+           "min": 0,
+           "max": 60000,
+           "currency_symbol": "₹",
+           "currency_code": "INR"
+         },
+         "taxonomies": [
+           {
+             "taxonomy": "pa_color",
+             "label": "Colors",
+             "singular_label": "Color",
+             "hierarchical": false,
+             "terms": [
+               {
+                 "id": 1,
+                 "name": "Red",
+                 "slug": "red",
+                 "count": 45,
+                 "color": "#FF0000"
+               }
+             ]
+           },
+           {
+             "taxonomy": "pa_size",
+             "label": "Sizes",
+             "terms": [...]
+           },
+           {
+             "taxonomy": "fabric",
+             "label": "Fabrics",
+             "terms": [...]
+           },
+           {
+             "taxonomy": "region",
+             "label": "Regions",
+             "terms": [...]
+           }
+         ],
+         "additional_filters": [
+           {
+             "id": "in_stock",
+             "name": "In Stock Only",
+             "slug": "in_stock",
+             "count": 450
+           },
+           {
+             "id": "on_sale",
+             "name": "On Sale",
+             "slug": "on_sale",
+             "count": 67
+           }
+         ]
+       }
 
-Test URLs:
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/cart
-POST   http://localhost/wooautopublix/wp-json/restbridge/v1/cart/add
-PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/cart/update
-POST   http://localhost/wooautopublix/wp-json/restbridge/v1/cart/remove
-POST   http://localhost/wooautopublix/wp-json/restbridge/v1/cart/clear
+Notes:
+- Dynamically detects all product taxonomies (colors, sizes, fabric, region, etc.)
+- Automatically includes color hex values for color-related taxonomies
+- Excludes system taxonomies (product_cat, product_tag, etc.)
+- Categories are handled separately in the "categories" field
+- Price range includes min/max from all products including variations
 
-Example Request Bodies:
-POST /cart/add:
-{
-  "product_id": 123,
-  "quantity": 2,
-  "variation_id": 456,
-  "variation": {
-    "color": "red",
-    "size": "large"
-  }
-}
-
-PUT /cart/update:
-{
-  "product_id": 123,
-  "quantity": 5
-}
-OR
-{
-  "key": "cart_item_key",
-  "quantity": 3
-}
-
-POST /cart/remove:
-{
-  "product_id": 123
-}
-OR
-{
-  "key": "cart_item_key"
-}
-
+Test URL:
+GET    http://localhost/styluzawebtx/wp-json/restbridge/v1/product-filters
 
 --------------------------------------------------------------------------------
-4. COUPONS API
+2. COUPONS API
 --------------------------------------------------------------------------------
 
 GET    /coupons
@@ -719,13 +824,15 @@ POST   /coupons/validate
        Body Parameters:
        - code (string, required): Coupon code to validate
 
-Test URLs:
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/coupons
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/coupons/123
-POST   http://localhost/wooautopublix/wp-json/restbridge/v1/coupons
-PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/coupons/123
-DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/coupons/123
-POST   http://localhost/wooautopublix/wp-json/restbridge/v1/coupons/validate
+Default WooCommerce Store API (cart coupons):
+GET    http://localhost/styluzawebtx/wp-json/wc/store/v1/cart/coupons
+POST   http://localhost/styluzawebtx/wp-json/wc/store/v1/cart/coupons
+        Body: { "code": "SAVE10" }
+DELETE http://localhost/styluzawebtx/wp-json/wc/store/v1/cart/coupons/{code}
+
+Notes:
+- Requires Store API session cookies + `X-WC-Store-API-Nonce`
+- Use `credentials: 'include'` (fetch) or `-b/-c` (cURL) so the coupon applies to the current cart
 
 Example Request Body (POST /coupons):
 {
@@ -739,7 +846,7 @@ Example Request Body (POST /coupons):
 }
 
 --------------------------------------------------------------------------------
-4. CUSTOMERS API
+3. CUSTOMERS API
 --------------------------------------------------------------------------------
 
 GET    /customers (requires auth)
@@ -806,7 +913,7 @@ DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/customers/123
 GET    http://localhost/wooautopublix/wp-json/restbridge/v1/customers/123/orders
 
 --------------------------------------------------------------------------------
-5. ORDERS API
+4. ORDERS API
 --------------------------------------------------------------------------------
 
 GET    /orders (requires auth)
@@ -888,7 +995,7 @@ Example Request Body (POST /orders):
 }
 
 --------------------------------------------------------------------------------
-6. REPORTS API
+5. REPORTS API
 --------------------------------------------------------------------------------
 
 GET    /reports/sales (requires auth)
@@ -929,7 +1036,7 @@ GET    http://localhost/wooautopublix/wp-json/restbridge/v1/reports/coupons/tota
 GET    http://localhost/wooautopublix/wp-json/restbridge/v1/reports/reviews/totals
 
 --------------------------------------------------------------------------------
-7. SETTINGS API
+6. SETTINGS API
 --------------------------------------------------------------------------------
 
 GET    /settings (requires auth)
@@ -969,7 +1076,7 @@ Example Request Body (PUT /settings/general):
 }
 
 --------------------------------------------------------------------------------
-8. SHIPPING ZONES API
+7. SHIPPING ZONES API
 --------------------------------------------------------------------------------
 
 GET    /shipping/zones (requires auth)
@@ -1179,7 +1286,7 @@ PUT /shipping/zones/{zone_id}/methods/{instance_id} (Disable Method):
 }
 
 --------------------------------------------------------------------------------
-9. SHIPPING METHODS API
+8. SHIPPING METHODS API
 --------------------------------------------------------------------------------
 
 GET    /shipping/methods (requires auth)
@@ -1314,38 +1421,38 @@ Example Request Body (POST /taxes/classes):
   "name": "Reduced Rate"
 }
 
-================================================================================
-AUTHENTICATION
-================================================================================
+--------------------------------------------------------------------------------
+HTML SNIPPET API
+--------------------------------------------------------------------------------
 
-Most POST, PUT, DELETE endpoints require authentication.
+GET    /html
+       Query Parameters:
+       - page_id (integer, optional): If provided, loads the published page content
+         and returns `<h1>` heading + sanitized `<p>` content.
+       - title (string, optional): Custom heading (fallback when page_id is missing)
+       - body (string, optional): Custom paragraph text (fallback)
 
-Authentication Methods:
-1. Application Passwords (recommended)
-2. Cookie authentication (for logged-in users)
-3. Bearer token (if using custom auth)
+Sample Responses:
+1. Using page_id  
+```
+GET /wp-json/restbridge/v1/html?page_id=82
+{
+  "page_id": 82,
+  "title": "Let's Get In Touch",
+  "body": "Plain text …",
+  "html": "<h1>Let's Get In Touch</h1><p>…</p>"
+}
+```
 
-To get Application Password:
-1. Go to WordPress Admin → Users → Your Profile
-2. Scroll to "Application Passwords"
-3. Enter name and click "Add New Application Password"
-4. Copy the generated password
-
-cURL Example with Authentication:
-curl -X POST "http://localhost/wooautopublix/wp-json/restbridge/v1/posts" \
-  -u "username:application_password" \
-  -H "Content-Type: application/json" \
-  -d '{"title": "New Post", "content": "Content"}'
-
-JavaScript Example:
-fetch('http://localhost/wooautopublix/wp-json/restbridge/v1/posts', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': 'Basic ' + btoa('username:application_password')
-  },
-  body: JSON.stringify({title: 'New Post', content: 'Content'})
-})
+2. Using manual title/body  
+```
+GET /wp-json/restbridge/v1/html?title=Test&body=Demo
+{
+  "title": "Test",
+  "body": "Demo",
+  "html": "<h1>Test</h1><p>Demo</p>"
+}
+```
 
 ================================================================================
 QUICK REFERENCE - ALL ENDPOINTS
@@ -1421,18 +1528,6 @@ GET    /footer/{id}
 GET    /footers
 
 WOOCOMMERCE:
-GET    /products
-GET    /products/{id}
-POST   /products
-PUT    /products/{id}
-DELETE /products/{id}
-
-GET    /cart
-POST   /cart/add
-PUT    /cart/update
-POST   /cart/remove
-POST   /cart/clear
-
 GET    /coupons
 GET    /coupons/{id}
 POST   /coupons
@@ -1902,6 +1997,165 @@ Test URLs:
 GET    http://localhost/wooautopublix/wp-json/restbridge/v1/footer
 GET    http://localhost/wooautopublix/wp-json/restbridge/v1/footer/123
 GET    http://localhost/wooautopublix/wp-json/restbridge/v1/footers
+
+================================================================================
+AUTHENTICATION GUIDE
+================================================================================
+
+WordPress REST API supports several authentication methods:
+
+1. APPLICATION PASSWORDS (Recommended for API Clients)
+   - Built into WordPress 5.6+
+   - Enable in wp-config.php: define('WP_APPLICATION_PASSWORDS', true);
+   - Create at: WordPress Admin → Users → Your Profile → Application Passwords
+   - Usage: Basic Auth with username:application_password
+   
+   cURL Example:
+   curl -X GET "http://localhost/styluzawebtx/wp-json/restbridge/v1/users" \
+     -u "your_username:generated_password"
+   
+   JavaScript Example:
+   fetch('/wp-json/restbridge/v1/users', {
+     headers: {
+       'Authorization': 'Basic ' + btoa('username:application_password')
+     }
+   })
+
+2. COOKIE AUTHENTICATION (For Logged-In Browser Users)
+   - Works automatically if making requests from same browser where logged in
+   - Use credentials: 'include' in fetch
+   
+   JavaScript Example:
+   fetch('/wp-json/restbridge/v1/users', {
+     credentials: 'include'
+   })
+
+3. BEARER TOKEN (Custom Implementation)
+   - Get token: POST /wp-json/restbridge/v1/users/token
+   - Body: {"username": "...", "password": "..."}
+   - Use: Authorization: Bearer <token>
+   
+   Example:
+   curl -X GET "http://localhost/styluzawebtx/wp-json/restbridge/v1/users" \
+     -H "Authorization: Bearer your_token_here"
+
+Permission Requirements:
+- Posts: edit_posts capability
+- Pages: edit_pages capability
+- Comments: moderate_comments capability
+- Categories/Tags: manage_categories capability
+- Users: list_users capability
+- Media: upload_files capability
+- Products: manage_woocommerce capability
+
+Security Best Practices:
+1. Use Application Passwords instead of account passwords
+2. Use HTTPS in production to encrypt credentials
+3. Rotate Application Passwords regularly
+4. Use least privilege - only grant necessary permissions
+5. Store credentials securely - never commit to version control
+6. Use environment variables for credentials in production
+
+================================================================================
+WOOCOMMERCE STORE API - SIMPLE GUIDE
+================================================================================
+
+How It Works:
+
+Guest Users (Non-Logged-In):
+- No authentication needed
+- Cookies handled automatically - WooCommerce creates woocommerce_session_* cookie
+- Session stored in database - wp_woocommerce_sessions table
+- Just send cookies - Use credentials: 'include' in fetch
+
+Logged-In Users:
+- WordPress cookies - Standard WordPress authentication cookies
+- Persistent cart - Automatically saved in user meta
+- No Bearer token needed - Just use WordPress login cookies
+
+Quick Examples:
+
+Get Cart:
+fetch('/wp-json/wc/store/v1/cart', {
+  credentials: 'include' // CRITICAL: Must send cookies
+})
+
+Add to Cart (Simple Product):
+fetch('/wp-json/wc/store/v1/cart/add-item', {
+  method: 'POST',
+  credentials: 'include',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-WC-Store-API-Nonce': nonce
+  },
+  body: JSON.stringify({
+    id: 123,
+    quantity: 1
+  })
+})
+
+Add to Cart (Variable Product):
+fetch('/wp-json/wc/store/v1/cart/add-item', {
+  method: 'POST',
+  credentials: 'include',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-WC-Store-API-Nonce': nonce
+  },
+  body: JSON.stringify({
+    id: 123,
+    quantity: 1,
+    variation: [
+      { attribute: 'pa_color', value: 'blue' },
+      { attribute: 'pa_size', value: 'medium' }
+    ]
+  })
+})
+
+Getting the Nonce:
+- From PHP: $nonce = wp_create_nonce('wc_store_api');
+- From JavaScript: const nonce = window.wcStoreApiNonce;
+- Extract from cart response (if available)
+
+Important Points:
+1. Always send cookies - Use credentials: 'include' in fetch
+2. Nonce required - Get from WordPress
+3. No custom code needed - WooCommerce handles everything automatically
+4. Guest users - Just use cookies, no authentication
+5. Logged-in users - Use WordPress login cookies, no Bearer token needed
+
+Session Management:
+
+Guest Users:
+- Session stored in wp_woocommerce_sessions table
+- Cookie: woocommerce_session_<hash>
+- Automatically created on first request
+- Persists via cookie
+
+Logged-In Users:
+- WordPress auth cookie: wordpress_logged_in_<hash>
+- WooCommerce session cookie: woocommerce_session_<hash>
+- Persistent cart in user meta: _woocommerce_persistent_cart_{blog_id}
+- Automatically synced
+
+Testing with cURL:
+
+Guest User:
+curl -X GET "http://localhost/styluzawebtx/wp-json/wc/store/v1/cart" \
+  -H "X-WC-Store-API-Nonce: <nonce>" \
+  -c cookies.txt
+
+curl -X POST "http://localhost/styluzawebtx/wp-json/wc/store/v1/cart/add-item" \
+  -H "Content-Type: application/json" \
+  -H "X-WC-Store-API-Nonce: <nonce>" \
+  -b cookies.txt \
+  -c cookies.txt \
+  -d '{"id": 123, "quantity": 1}'
+
+Logged-In User:
+curl -X GET "http://localhost/styluzawebtx/wp-json/wc/store/v1/cart" \
+  -H "X-WC-Store-API-Nonce: <nonce>" \
+  -b "wordpress_logged_in_<hash>=<value>; woocommerce_session_<hash>=<value>"
 
 ================================================================================
 NOTES

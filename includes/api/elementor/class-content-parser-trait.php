@@ -735,6 +735,7 @@ trait RESTBridge_Content_Parser {
             'button',
             'html',
             'shortcode',
+            'contact-info',
         ];
 
         // Complex blocks that need metadata
@@ -1219,6 +1220,14 @@ trait RESTBridge_Content_Parser {
                 }
                 break;
                 
+            case 'contact-info':
+                if (!empty($content['title'])) {
+                    $identifier = $content['title'];
+                } elseif (!empty($attrs['title'])) {
+                    $identifier = $attrs['title'];
+                }
+                break;
+                
             case 'quote':
                 if (isset($content['value']) && !empty($content['value'])) {
                     $identifier = substr($content['value'], 0, 50);
@@ -1424,6 +1433,109 @@ trait RESTBridge_Content_Parser {
                 ];
                 break;
 
+            case 'contact-info': // styluza/contact-info custom block
+                $title_value = isset($attrs['title']) ? wp_strip_all_tags($attrs['title']) : '';
+                if ($title_value === '' && $block && isset($block['innerBlocks'])) {
+                    $heading_block = null;
+                    foreach ($block['innerBlocks'] as $inner_block) {
+                        if (($inner_block['blockName'] ?? '') === 'core/heading') {
+                            $heading_block = $inner_block;
+                            break;
+                        }
+                    }
+                    if ($heading_block) {
+                        if (!empty($heading_block['attrs']['content'])) {
+                            $title_value = wp_strip_all_tags($heading_block['attrs']['content']);
+                        } elseif (!empty($heading_block['innerHTML'])) {
+                            $title_value = wp_strip_all_tags($heading_block['innerHTML']);
+                        }
+                    }
+                }
+                if ($title_value === '') {
+                    $title_value = __("Let's Get In Touch", 'headlessplugin');
+                }
+                $address_value = isset($attrs['address']) ? wp_strip_all_tags($attrs['address']) : '';
+                $email_value = isset($attrs['email']) ? sanitize_email($attrs['email']) : '';
+                $phone_value = isset($attrs['phone']) ? wp_strip_all_tags($attrs['phone']) : '';
+
+                $items = [
+                    [
+                        'id' => 'title',
+                        'label' => __('Title', 'headlessplugin'),
+                        'value' => $title_value,
+                        'type' => 'text',
+                    ],
+                    [
+                        'id' => 'address',
+                        'label' => __('Address', 'headlessplugin'),
+                        'value' => $address_value,
+                        'type' => 'text',
+                        'icon' => [
+                            'type' => 'svg',
+                            'path' => 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z',
+                        ],
+                    ],
+                    [
+                        'id' => 'email',
+                        'label' => __('Email', 'headlessplugin'),
+                        'value' => $email_value,
+                        'type' => 'email',
+                        'href' => $email_value ? 'mailto:' . $email_value : '',
+                        'icon' => [
+                            'type' => 'svg',
+                            'path' => 'M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z',
+                        ],
+                    ],
+                    [
+                        'id' => 'phone',
+                        'label' => __('Call', 'headlessplugin'),
+                        'value' => $phone_value,
+                        'type' => 'tel',
+                        'href' => $phone_value ? 'tel:' . preg_replace('/[^0-9+]/', '', $phone_value) : '',
+                        'icon' => [
+                            'type' => 'svg',
+                            'path' => 'M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z',
+                        ],
+                    ],
+                ];
+
+                $text_items = [];
+                if ($title_value !== '') {
+                    $text_items[] = [
+                        'label' => __('Title', 'headlessplugin'),
+                        'text' => $title_value,
+                    ];
+                }
+                if ($address_value !== '') {
+                    $text_items[] = [
+                        'label' => __('Address', 'headlessplugin'),
+                        'text' => $address_value,
+                    ];
+                }
+                if ($email_value !== '') {
+                    $text_items[] = [
+                        'label' => __('Email', 'headlessplugin'),
+                        'text' => $email_value,
+                    ];
+                }
+                if ($phone_value !== '') {
+                    $text_items[] = [
+                        'label' => __('Call', 'headlessplugin'),
+                        'text' => $phone_value,
+                    ];
+                }
+
+                $content = [
+                    'title' => $title_value,
+                    'address' => $address_value,
+                    'email' => $email_value,
+                    'phone' => $phone_value,
+                    'items' => $items,
+                    'text_items' => $text_items,
+                ];
+
+                break;
+
             case 'columns':
                 // Columns block contains nested blocks
                 $content = [
@@ -1495,7 +1607,7 @@ trait RESTBridge_Content_Parser {
 
                 $content = [
                     'title' => $title_value,
-                    'description' => $description_value,
+                    'description' => $description_value,    
                     'button' => [
                         'text' => $button_text_clean,
                         'url'  => $button_url_value,
