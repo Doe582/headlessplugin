@@ -15,6 +15,13 @@ class RESTBridge_Customers_API {
 			'permission_callback' => '__return_true',
 		]);
 
+		// Dedicated registration endpoint
+		register_rest_route(RESTBRIDGE_API_NAMESPACE, '/customers/register', [
+			'methods' => 'POST',
+			'callback' => [$this, 'register_customer'],
+			'permission_callback' => '__return_true',
+		]);
+
 		register_rest_route(RESTBRIDGE_API_NAMESPACE, '/customers/(?P<id>\d+)', [
 			'methods' => 'GET',
 			'callback' => [$this, 'get_customer'],
@@ -256,6 +263,109 @@ class RESTBridge_Customers_API {
 		return rest_ensure_response($this->format_customer(new WC_Customer($customer_id)), 201);
 	}
 
+	/**
+	 * Register a new customer (dedicated endpoint)
+	 * POST /wp-json/restbridge/v1/customers/register
+	 * 
+	 * Body:
+	 * {
+	 *   "email": "user@example.com",
+	 *   "username": "username",
+	 *   "password": "password",
+	 *   "first_name": "John",
+	 *   "last_name": "Doe"
+	 * }
+	 */
+	public function register_customer(WP_REST_Request $request) {
+		if (!function_exists('WC')) {
+			return new WP_Error('woocommerce_not_active', 'WooCommerce not active', ['status' => 500]);
+		}
+
+		$params = $request->get_json_params();
+
+		// Validate required fields
+		if (empty($params['email'])) {
+			return new WP_Error('missing_email', 'Email is required', ['status' => 400]);
+		}
+
+		if (empty($params['password'])) {
+			return new WP_Error('missing_password', 'Password is required', ['status' => 400]);
+		}
+
+		$email = sanitize_email($params['email']);
+		$password = $params['password'];
+		$username = isset($params['username']) ? sanitize_user($params['username']) : '';
+		$first_name = isset($params['first_name']) ? sanitize_text_field($params['first_name']) : '';
+		$last_name = isset($params['last_name']) ? sanitize_text_field($params['last_name']) : '';
+
+		// Validate email
+		if (!is_email($email)) {
+			return new WP_Error('invalid_email', 'Please provide a valid email address', ['status' => 400]);
+		}
+
+		// Check if email already exists
+		if (email_exists($email)) {
+			return new WP_Error('email_exists', 'This email is already registered', ['status' => 400]);
+		}
+
+		// Generate username if not provided
+		if (empty($username)) {
+			$username = explode('@', $email)[0];
+			$base_username = $username;
+			$counter = 1;
+
+			while (username_exists($username)) {
+				$username = $base_username . $counter;
+				$counter++;
+			}
+		} else {
+			// Check if username already exists
+			if (username_exists($username)) {
+				return new WP_Error('username_exists', 'This username is already taken', ['status' => 400]);
+			}
+		}
+
+		// Validate password strength
+		if (strlen($password) < 6) {
+			return new WP_Error('weak_password', 'Password must be at least 6 characters long', ['status' => 400]);
+		}
+
+		// Create WordPress user
+		$user_data = [
+			'user_login' => $username,
+			'user_email' => $email,
+			'user_pass' => $password,
+			'first_name' => $first_name,
+			'last_name' => $last_name,
+			'role' => 'customer',
+		];
+
+		$user_id = wp_insert_user($user_data);
+
+		if (is_wp_error($user_id)) {
+			return new WP_Error('registration_failed', $user_id->get_error_message(), ['status' => 500]);
+		}
+
+		// Create WooCommerce customer
+		$customer = new WC_Customer($user_id);
+		$customer->set_email($email);
+		$customer->set_first_name($first_name);
+		$customer->set_last_name($last_name);
+		$customer->save();
+
+		// Do registration action hook
+		do_action('customer_register', $user_id);
+
+		return rest_ensure_response([
+			'message' => 'Customer registered successfully',
+			'user_id' => $user_id,
+			'email' => $email,
+			'username' => $username,
+			'first_name' => $first_name,
+			'last_name' => $last_name,
+		], 201);
+	}
+
 	public function update_customer(WP_REST_Request $request) {
 		if (!function_exists('WC')) {
 			return new WP_Error('woocommerce_not_active', 'WooCommerce not active', ['status' => 500]);
@@ -408,7 +518,7 @@ class RESTBridge_Customers_API {
 
 		// Only admins can delete customers (users cannot delete themselves via this endpoint)
 		if (!$is_admin) {
-			return new WP_Error(
+			return new WP_Error(	
 				'rest_cannot_access',
 				'Sorry, you are not allowed to delete customers. Only administrators can delete customers.',
 				['status' => 403]
@@ -549,7 +659,7 @@ class RESTBridge_Customers_API {
 					list($username, $password) = explode(':', $credentials, 2);
 					$user = wp_authenticate($username, $password);
 					if (!is_wp_error($user)) {
-						wp_set_current_user($user->ID);
+						wp_set_current_user($user->ID);	
 						$user_id = $user->ID;
 					}
 				}

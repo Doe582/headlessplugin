@@ -12,7 +12,7 @@ class RESTBridge_Users_API {
         register_rest_route(RESTBRIDGE_API_NAMESPACE, '/users', [
             'methods' => 'POST',
             'callback' => [$this, 'create_user'],
-            'permission_callback' => [$this, 'check_permission'],
+            'permission_callback' => true,
         ]);
 
         register_rest_route(RESTBRIDGE_API_NAMESPACE, '/users/(?P<id>\\d+)', [
@@ -200,7 +200,7 @@ class RESTBridge_Users_API {
 
         return rest_ensure_response(['deleted' => true, 'id' => $user_id]);
     }
-
+    
     private function format_user($user) {
         return [
             'id' => $user->ID,

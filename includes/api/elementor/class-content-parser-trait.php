@@ -210,12 +210,9 @@ trait RESTBridge_Content_Parser {
 
         switch ($widget_type) {
             case 'heading':
-                // Clean title: remove HTML tags and <br /> tags
+                // Clean title: preserve formatting tags
                 $title = isset($settings['title']) ? $settings['title'] : '';
-                $title = preg_replace('/<br\s*\/?>/i', ' ', $title);
-                $title = wp_strip_all_tags($title);
-                $title = preg_replace('/\s+/', ' ', $title);
-                $title = trim($title);
+                $title = $this->preserve_formatting_tags($title);
                 
                 $content = [
                     'title' => $title,
@@ -225,12 +222,9 @@ trait RESTBridge_Content_Parser {
                 break;
 
             case 'text-editor':
-                // Clean description: remove HTML tags and <br /> tags
+                // Clean description: preserve formatting tags like span with color
                 $description = isset($settings['editor']) ? $settings['editor'] : '';
-                $description = preg_replace('/<br\s*\/?>/i', ' ', $description);
-                $description = wp_strip_all_tags($description);
-                $description = preg_replace('/\s+/', ' ', $description);
-                $description = trim($description);
+                $description = $this->preserve_formatting_tags($description);
                 
                 $content = [
                     'description' => $description,
@@ -239,12 +233,9 @@ trait RESTBridge_Content_Parser {
                 break;
 
             case 'button':
-                // Clean button text
+                // Clean button text: preserve formatting tags
                 $text = isset($settings['text']) ? $settings['text'] : '';
-                $text = preg_replace('/<br\s*\/?>/i', ' ', $text);
-                $text = wp_strip_all_tags($text);
-                $text = preg_replace('/\s+/', ' ', $text);
-                $text = trim($text);
+                $text = $this->preserve_formatting_tags($text);
                 
                 $content = [
                     'text' => $text,
@@ -260,12 +251,9 @@ trait RESTBridge_Content_Parser {
                     $image_url = wp_get_attachment_image_url($image_id, 'full');
                 }
                 
-                // Clean caption
+                // Clean caption: preserve formatting tags
                 $caption = isset($settings['caption']) ? $settings['caption'] : '';
-                $caption = preg_replace('/<br\s*\/?>/i', ' ', $caption);
-                $caption = wp_strip_all_tags($caption);
-                $caption = preg_replace('/\s+/', ' ', $caption);
-                $caption = trim($caption);
+                $caption = $this->preserve_formatting_tags($caption);
                 
                 $content = [
                     'image_url' => $image_url,
@@ -283,19 +271,13 @@ trait RESTBridge_Content_Parser {
                     $image_url = wp_get_attachment_image_url($image_id, 'full');
                 }
                 
-                // Clean title
+                // Clean title: preserve formatting tags
                 $title = isset($settings['title_text']) ? $settings['title_text'] : '';
-                $title = preg_replace('/<br\s*\/?>/i', ' ', $title);
-                $title = wp_strip_all_tags($title);
-                $title = preg_replace('/\s+/', ' ', $title);
-                $title = trim($title);
+                $title = $this->preserve_formatting_tags($title);
                 
-                // Clean description
+                // Clean description: preserve formatting tags
                 $description = isset($settings['description_text']) ? $settings['description_text'] : '';
-                $description = preg_replace('/<br\s*\/?>/i', ' ', $description);
-                $description = wp_strip_all_tags($description);
-                $description = preg_replace('/\s+/', ' ', $description);
-                $description = trim($description);
+                $description = $this->preserve_formatting_tags($description);
                 
                 $content = [
                     'title' => $title,
@@ -306,19 +288,13 @@ trait RESTBridge_Content_Parser {
                 break;
 
             case 'icon-box':
-                // Clean title
+                // Clean title: preserve formatting tags
                 $title = isset($settings['title_text']) ? $settings['title_text'] : '';
-                $title = preg_replace('/<br\s*\/?>/i', ' ', $title);
-                $title = wp_strip_all_tags($title);
-                $title = preg_replace('/\s+/', ' ', $title);
-                $title = trim($title);
+                $title = $this->preserve_formatting_tags($title);
                 
-                // Clean description
+                // Clean description: preserve formatting tags
                 $description = isset($settings['description_text']) ? $settings['description_text'] : '';
-                $description = preg_replace('/<br\s*\/?>/i', ' ', $description);
-                $description = wp_strip_all_tags($description);
-                $description = preg_replace('/\s+/', ' ', $description);
-                $description = trim($description);
+                $description = $this->preserve_formatting_tags($description);
                 
                 $content = [
                     'title' => $title,
@@ -1266,12 +1242,9 @@ trait RESTBridge_Content_Parser {
 
         switch ($block_type) {
             case 'heading':
-                // Clean heading text: replace <br /> with spaces
+                // Clean heading text: preserve formatting tags
                 $heading_text = isset($attrs['content']) ? $attrs['content'] : $inner_html;
-                $heading_text = preg_replace('/<br\s*\/?>/i', ' ', $heading_text);
-                $heading_text = wp_strip_all_tags($heading_text);
-                $heading_text = preg_replace('/\s+/', ' ', $heading_text);
-                $heading_text = trim($heading_text);
+                $heading_text = $this->preserve_formatting_tags($heading_text);
                 
                 $content = [
                     'title' => $heading_text,
@@ -1279,12 +1252,9 @@ trait RESTBridge_Content_Parser {
                 break;
 
             case 'paragraph':
-                // Clean paragraph text: replace <br /> with spaces
+                // Clean paragraph text: preserve formatting tags
                 $para_text = isset($attrs['content']) ? $attrs['content'] : $inner_html;
-                $para_text = preg_replace('/<br\s*\/?>/i', ' ', $para_text);
-                $para_text = wp_strip_all_tags($para_text);
-                $para_text = preg_replace('/\s+/', ' ', $para_text);
-                $para_text = trim($para_text);
+                $para_text = $this->preserve_formatting_tags($para_text);
                 
                 $content = [
                     'description' => $para_text,
@@ -1336,12 +1306,9 @@ trait RESTBridge_Content_Parser {
                 break;
 
             case 'quote':
-                // Clean quote text: replace <br /> with spaces
+                // Clean quote text: preserve formatting tags
                 $quote_text = isset($attrs['value']) ? $attrs['value'] : $inner_html;
-                $quote_text = preg_replace('/<br\s*\/?>/i', ' ', $quote_text);
-                $quote_text = wp_strip_all_tags($quote_text);
-                $quote_text = preg_replace('/\s+/', ' ', $quote_text);
-                $quote_text = trim($quote_text);
+                $quote_text = $this->preserve_formatting_tags($quote_text);
                 
                 $content = [
                     'value' => $quote_text,
@@ -1350,12 +1317,9 @@ trait RESTBridge_Content_Parser {
                 break;
 
             case 'list':
-                // Clean list text: replace <br /> with spaces
+                // Clean list text: preserve formatting tags
                 $list_text = isset($attrs['values']) ? $attrs['values'] : $inner_html;
-                $list_text = preg_replace('/<br\s*\/?>/i', ' ', $list_text);
-                $list_text = wp_strip_all_tags($list_text);
-                $list_text = preg_replace('/\s+/', ' ', $list_text);
-                $list_text = trim($list_text);
+                $list_text = $this->preserve_formatting_tags($list_text);
                 
                 $content = [
                     'values' => $list_text,
@@ -1571,12 +1535,12 @@ trait RESTBridge_Content_Parser {
                     if ($inner_name === 'core/heading') {
                         $raw = $inner['attrs']['content'] ?? ($inner['innerHTML'] ?? '');
                         if ($raw !== '') {
-                            $title_value = wp_strip_all_tags($raw);
+                            $title_value = $this->preserve_formatting_tags($raw);
                         }
                     } elseif ($inner_name === 'core/paragraph') {
                         $raw = $inner['attrs']['content'] ?? ($inner['innerHTML'] ?? '');
                         if ($raw !== '') {
-                            $description_value = wp_strip_all_tags($raw);
+                            $description_value = $this->preserve_formatting_tags($raw);
                         }
                     } elseif ($inner_name === 'core/buttons' && !empty($inner['innerBlocks'])) {
                         $button_block = $inner['innerBlocks'][0];
@@ -4937,6 +4901,32 @@ trait RESTBridge_Content_Parser {
         }
 
         return null;
+    }
+
+    /**
+     * Preserve formatting tags while removing structural tags
+     * Keeps: span, strong, em, b, i, u, mark, small, sub, sup
+     * Removes: p, div, br, etc.
+     */
+    protected function preserve_formatting_tags($html) {
+        if (empty($html)) {
+            return '';
+        }
+
+        // First, convert <br> and <br/> and <br /> to spaces
+        $html = preg_replace('/<br\s*\/?>/i', ' ', $html);
+
+        // Strip all tags except formatting tags
+        $allowed_tags = '<span><strong><em><b><i><u><mark><small><sub><sup>';
+        $html = strip_tags($html, $allowed_tags);
+
+        // Clean up multiple spaces
+        $html = preg_replace('/\s+/', ' ', $html);
+
+        // Trim
+        $html = trim($html);
+
+        return $html;
     }
 }
 

@@ -45,7 +45,7 @@ class RESTBridge_Wishlist_API {
     }
 
     public function add_to_wishlist(WP_REST_Request $request) {
-        $auth = $this->maybe_authenticate_request_user($request, true);
+        $auth = $this->maybe_authenticate_request_user($request);
         if (is_wp_error($auth)) {
             return $auth;
         }
@@ -61,17 +61,20 @@ class RESTBridge_Wishlist_API {
         }
 
         $wishlist = $this->get_current_wishlist_items();
+
         if (!in_array($product_id, $wishlist, true)) {
             $wishlist[] = $product_id;
             $this->save_wishlist($wishlist);
         }
 
-        $response = $this->build_wishlist_response($wishlist);
-        return rest_ensure_response($response);
+        return rest_ensure_response(
+            $this->build_wishlist_response($wishlist)
+        );
     }
 
+
     public function remove_from_wishlist(WP_REST_Request $request) {
-        $auth = $this->maybe_authenticate_request_user($request, true);
+        $auth = $this->maybe_authenticate_request_user($request);
         if (is_wp_error($auth)) {
             return $auth;
         }
@@ -83,11 +86,14 @@ class RESTBridge_Wishlist_API {
 
         $wishlist = $this->get_current_wishlist_items();
         $wishlist = array_values(array_diff($wishlist, [$product_id]));
+
         $this->save_wishlist($wishlist);
 
-        $response = $this->build_wishlist_response($wishlist);
-        return rest_ensure_response($response);
+        return rest_ensure_response(
+            $this->build_wishlist_response($wishlist)
+        );
     }
+
 
     private function extract_product_id(WP_REST_Request $request) {
         $params = $request->get_json_params();

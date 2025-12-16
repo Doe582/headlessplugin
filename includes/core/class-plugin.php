@@ -22,6 +22,7 @@ class RESTBridge_Plugin {
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-custom-post-types-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-fluent-form-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-html-api.php';
+        require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-search-api.php';
         
         // Elementor & Gutenberg APIs
         require_once plugin_dir_path(__FILE__) . '../api/elementor/class-content-parser-trait.php';
@@ -36,6 +37,7 @@ class RESTBridge_Plugin {
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-cart-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-coupons-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-customers-api.php';
+        require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-my-account-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-orders-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-reports-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-settings-api.php';
@@ -112,6 +114,9 @@ class RESTBridge_Plugin {
         $html_api = new RESTBridge_HTML_API();
         $html_api->register_routes();
 
+        $search_api = new RESTBridge_Search_API();
+        $search_api->register_routes();
+
         // FluentForm API
         if (class_exists('\FluentForm\App\Models\Submission')) {
             $fluent_form_api = new RESTBridge_FluentForm_API();
@@ -144,6 +149,9 @@ class RESTBridge_Plugin {
 
             $coupons_api = new RESTBridge_Coupons_API();
             $coupons_api->register_routes();
+
+            $myaccout_api = new RESTBridge_Account_API();
+            $myaccout_api->register_routes();
 
             $customers_api = new RESTBridge_Customers_API();
             $customers_api->register_routes();

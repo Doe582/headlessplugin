@@ -38,6 +38,103 @@ class RESTBridge_Products_API {
             'callback' => [$this, 'delete_product'],
             'permission_callback' => [$this, 'check_permission'],
         ]);
+
+        // Register compare endpoint
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/products/compare/(?P<ids>[\d,]+)', [
+            'methods'  => 'GET',
+            'callback' => [$this, 'compare_products'],
+            'permission_callback' => '__return_true',
+            'args' => [
+                'ids' => [
+                    'required' => true,
+                    'description' => 'Comma separated product IDs',
+                ],
+            ],
+        ]);
+    }
+    /**
+     * Compare products by IDs
+     * @param WP_REST_Request $request
+     * @return WP_REST_Response|WP_Error
+     */
+    public function compare_products(WP_REST_Request $request) {
+
+        // ids from URL → "12,45,78"
+        $ids_param = $request->get_param('ids');
+
+        if (empty($ids_param)) {
+            return new WP_Error(
+                'invalid_ids',
+                'Product IDs are required.',
+                ['status' => 400]
+            );
+        }
+
+        // Convert to array
+        $ids = array_filter(array_map('intval', explode(',', $ids_param)));
+
+        if (empty($ids)) {
+            return new WP_Error(
+                'invalid_ids',
+                'No valid product IDs provided.',
+                ['status' => 400]
+            );
+        }
+
+        $products = [];
+
+        foreach ($ids as $id) {
+
+            $product = wc_get_product($id);
+            if (!$product) {
+                continue;
+            }
+
+            $formatted = $this->format_product($product);
+
+            // Add categories with name + slug
+            $formatted['categories'] = $this->get_product_terms(
+                $product->get_id(),
+                'product_cat'
+            );
+
+            // Add tags with name + slug
+            $formatted['tags'] = $this->get_product_terms(
+                $product->get_id(),
+                'product_tag'
+            );
+
+            $products[] = $formatted;
+        }
+
+        if (empty($products)) {
+            return new WP_Error(
+                'no_products_found',
+                'No valid products found.',
+                ['status' => 404]
+            );
+        }
+
+        return rest_ensure_response([
+            'count'    => count($products),
+            'products' => $products,
+        ]);
+    }
+    private function get_product_terms($product_id, $taxonomy) {
+
+        $terms = get_the_terms($product_id, $taxonomy);
+
+        if (empty($terms) || is_wp_error($terms)) {
+            return [];
+        }
+
+        return array_map(function ($term) {
+            return [
+                'id'   => $term->term_id,
+                'name' => $term->name,
+                'slug' => $term->slug,
+            ];
+        }, $terms);
     }
 
     public function get_products(WP_REST_Request $request) {

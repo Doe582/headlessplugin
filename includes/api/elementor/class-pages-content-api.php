@@ -11,6 +11,7 @@ class RESTBridge_Pages_Content_API {
             'methods' => 'GET',
             'callback' => [$this, 'get_page_content'],
             'permission_callback' => '__return_true',
+            'show_in_rest' => true,
         ]);
 
         // Get page content by ID (alternative endpoint)
@@ -18,6 +19,7 @@ class RESTBridge_Pages_Content_API {
             'methods' => 'GET',
             'callback' => [$this, 'get_page_content'],
             'permission_callback' => '__return_true',
+            'show_in_rest' => true,
         ]);
 
         // Get page content by slug (auto-detect Elementor or Gutenberg)
@@ -25,6 +27,7 @@ class RESTBridge_Pages_Content_API {
             'methods' => 'GET',
             'callback' => [$this, 'get_page_content_by_slug'],
             'permission_callback' => '__return_true',
+            'show_in_rest' => true,
         ]);
 
         // Get page content by slug (alternative endpoint)
@@ -32,8 +35,127 @@ class RESTBridge_Pages_Content_API {
             'methods' => 'GET',
             'callback' => [$this, 'get_page_content_by_slug'],
             'permission_callback' => '__return_true',
+            'show_in_rest' => true,
+        ]);
+
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/page-faqs/(?P<page_id>\d+)', [
+            'methods'  => 'GET',
+            'callback' => [$this,'restbridge_get_page_faqs'],
+            'permission_callback' => '__return_true',
+        ]);
+    
+    }
+
+        function restbridge_get_page_faqs(WP_REST_Request $request) {
+
+    $page_id = (int) $request->get_param('page_id');
+
+    if (!$page_id || get_post_status($page_id) !== 'publish') {
+        return new WP_Error('invalid_page', 'Invalid or unpublished page.', ['status' => 404]);
+    }
+
+    $post = get_post($page_id);
+    if (!$post) {
+        return new WP_Error('page_not_found', 'Page not found.', ['status' => 404]);
+    }
+
+    $content = apply_filters('the_content', $post->post_content);
+
+    libxml_use_internal_errors(true);
+    $dom = new DOMDocument();
+    $dom->loadHTML('<?xml encoding="utf-8" ?>' . $content);
+
+    $xpath = new DOMXPath($dom);
+
+    /* STEP 1: EXTRACT FAQs (h3 only) */
+    $faqs = [];
+
+    $h3s = $xpath->query('//h3');
+
+    foreach ($h3s as $heading) {
+
+        $answerText = '';
+        $toRemove   = [$heading];
+
+        $next = $heading->nextSibling;
+
+        while ($next) {
+
+            if ($next->nodeName === 'h3') {
+                break;
+            }
+
+            if (in_array($next->nodeName, ['p', 'div'])) {
+                $answerText .= ' ' . trim($next->textContent);
+                $toRemove[] = $next;
+            }
+
+            $next = $next->nextSibling;
+        }
+
+        if (trim($answerText) !== '') {
+            $faqs[] = [
+                'question' => trim($heading->textContent),
+                'answer'   => trim(preg_replace('/\s+/', ' ', $answerText))
+            ];
+
+            // Remove FAQ question & answers from DOM
+            foreach ($toRemove as $node) {
+                if ($node->parentNode) {
+                    $node->parentNode->removeChild($node);
+                }
+            }
+        }
+    }
+
+    /*  STEP 2: GET PAGE CONTENT AS STRUCTURED h2 + p */
+    $content_blocks = [];
+
+    $h2s = $xpath->query('//h2');
+
+    foreach ($h2s as $h2) {
+
+        $section = [
+            'title'       => trim($h2->textContent),
+            'description' => ''
+        ];
+
+        $descParts = [];
+        $next = $h2->nextSibling;
+
+        while ($next) {
+
+            // Stop at next section
+            if ($next->nodeName === 'h2') {
+                break;
+            }
+
+            // Collect paragraph text only
+            if ($next->nodeName === 'p') {
+                $text = trim($next->textContent);
+                if ($text !== '') {
+                    $descParts[] = $text;
+                }
+            }
+
+            $next = $next->nextSibling;
+        }
+
+        $section['description'] = trim(implode(' ', $descParts));
+        $content_blocks[] = $section;
+    }
+
+
+
+        return rest_ensure_response([
+            'page_id' => $page_id,
+            'content' => $content_blocks, // FAQ text removed
+            'count'   => count($faqs),
+            'faqs'    => $faqs,
         ]);
     }
+    
+
 
     /**
      * Get page content by ID (auto-detect Elementor or Gutenberg)
@@ -75,7 +197,7 @@ class RESTBridge_Pages_Content_API {
             $response['editor'] = 'elementor';
             // Add plain text content
             $response['plain_text'] = $this->extract_plain_text_content($response);
-            return rest_ensure_response($response);
+            return $this->prepare_response_with_html($response);
         }
 
         // Check for Gutenberg - only if not Elementor
@@ -84,7 +206,7 @@ class RESTBridge_Pages_Content_API {
             $response = $this->parse_gutenberg_content($page, $content);
             // Add plain text content
             $response['plain_text'] = $this->extract_plain_text_content($response);
-            return rest_ensure_response($response);
+            return $this->prepare_response_with_html($response);
         }
 
         // If content exists but no Elementor/Gutenberg, try to parse HTML into sections
@@ -92,10 +214,21 @@ class RESTBridge_Pages_Content_API {
             $response = $this->parse_html_content_into_sections($page, $content);
             $response['editor'] = 'html';
             $response['plain_text'] = $this->extract_plain_text_content($response);
-            return rest_ensure_response($response);
+            return $this->prepare_response_with_html($response);
         }
 
         return new WP_Error('no_content', 'This page does not have any content', ['status' => 404]);
+    }
+
+    /**
+     * Prepare response with HTML preserved
+     * This prevents WordPress from sanitizing HTML tags like span with inline styles
+     */
+    private function prepare_response_with_html($data) {
+        // Return using rest_ensure_response which is the standard way
+        // HTML sanitization in REST API is handled via schema validation
+        // Since we're not defining a schema, the content should pass through as-is
+        return rest_ensure_response($data);
     }
 
     /**

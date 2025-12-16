@@ -211,73 +211,124 @@ Notes:
 --------------------------------------------------------------------------------
 6. MY ACCOUNT DATA (DEFAULT WORDPRESS + WOO REST)
 --------------------------------------------------------------------------------
-Base URL: http://localhost/styluzawebtx/wp-json
 
-Authentication:
-- Send logged-in WP cookies or Authorization: Bearer <token> (token created via /restbridge/v1/users/token).
-- WooCommerce v3 endpoints also accept application passwords or consumer key/secret if preferred.
 
-Dashboard / Profile Card:
-GET    /wp/v2/users/me?context=edit
-Headers: X-WP-Nonce (or Authorization header)
-Returns: name, username, email, avatar_urls, meta (first_name, last_name, billing/shipping IDs).
-Sample curl:
-curl -X GET \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "Content-Type: application/json" \
-  https://<SITE>/wp-json/wp/v2/users/me?context=edit
+API Testing Using Token (Bearer Auth)
+✅ 1️⃣ Get Full Account Overview
+curl -X GET "http://localhost/styluzawebtx/wp-json/restbridge/v1/account" \
+  -H "Authorization: Bearer <token>"
 
-Customer Profile + Addresses:
-GET    /wc/v3/customers/{user_id}
-PUT    /wc/v3/customers/{user_id}
-Payload fields:
+🧍 2️⃣ Get Account Details
+curl -X GET "http://localhost/styluzawebtx/wp-json/restbridge/v1/account/details" \
+  -H "Authorization: Bearer <token>"
+
+📦 3️⃣ Get Orders List
+curl -X GET "http://localhost/styluzawebtx/wp-json/restbridge/v1/account/orders" \
+  -H "Authorization: Bearer <token>"
+
+📄 4️⃣ Get Single Order Details
+curl -X GET "http://localhost/styluzawebtx/wp-json/restbridge/v1/account/orders/118" \
+  -H "Authorization: Bearer <token>"
+
+
+⬇ 5️⃣ Get Downloads
+curl -X GET "http://localhost/styluzawebtx/wp-json/restbridge/v1/account/downloads" \
+  -H "Authorization: Bearer <token>"
+
+📍 6️⃣ Get Address (Billing + Shipping)
+curl -X GET "http://localhost/styluzawebtx/wp-json/restbridge/v1/account/address" \
+  -H "Authorization: Bearer <token>"
+
+# Base:
+http://localhost/styluzawebtx/wp-json/restbridge/v1
+
+# Common headers:
+Authorization: Bearer <token>
+Content-Type: application/json (for POST/PUT)
+
+1) Add Address
+POST /account/addresses
+Body:
 {
-  "first_name": "Sophia",
-  "last_name": "Water",
-  "billing": {...},
-  "shipping": {...}
+  "type": "billing|shipping",
+  "first_name": "",
+  "last_name": "",
+  "company": "",
+  "address_1": "",
+  "address_2": "",
+  "city": "",
+  "state": "",
+  "postcode": "",
+  "country": "",
+  "phone": ""
 }
-Use GET result for the left sidebar (avatar/email) and Address tab.
-Sample curl (GET):
-curl -X GET \
-  -H "Authorization: Bearer <TOKEN>" \
-  https://<SITE>/wp-json/wc/v3/customers/<USER_ID>
 
-Sample curl (PUT):
 curl -X PUT \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{...payload...}' \
-  https://<SITE>/wp-json/wc/v3/customers/<USER_ID>
+"http://localhost/styluzawebtx/wp-json/restbridge/v1/account/address/update" \
+-H "Authorization: Bearer <token>" \
+-H "Content-Type: application/json" \
+-d '{
+  "billing": {
+    "first_name": "John",
+    "last_name": "Doe",
+    "phone": "+91 9876543210",
+    "address_1": "New Street 456",
+    "city": "Surat",
+    "state": "GJ",
+    "postcode": "395003",
+    "country": "IN"
+  },
+  "shipping": {
+    "first_name": "John",
+    "last_name": "Doe",
+    "address_1": "New Street 456",
+    "city": "Surat",
+    "state": "GJ",
+    "postcode": "395003",
+    "country": "IN"
+  }
+}'
 
-Orders List:
-GET    /wc/v3/orders?customer={user_id}&per_page=20&status=any
-Optional params: status=completed,pending | page=2 | orderby=date
-Response includes total/count for Dashboard cards.
-Sample curl:
-curl -X GET \
-  -H "Authorization: Bearer <TOKEN>" \
-  "https://<SITE>/wp-json/wc/v3/orders?customer=<USER_ID>&per_page=20&status=any"
+POST /account/addresses
 
-Single Order Detail:
-GET    /wc/v3/orders/{order_id}
-Use for Order detail view, includes billing/shipping, line_items, totals, downloadable items.
-Sample curl:
-curl -X GET \
-  -H "Authorization: Bearer <TOKEN>" \
-  https://<SITE>/wp-json/wc/v3/orders/<ORDER_ID>
+{
+  "type": "shipping",
+  "first_name": "Clark",
+  "last_name": "Kent",
+  "address_1": "1000 Sullivan Ln",
+  "address_2": "Metropolis Tower",
+  "city": "Metropolis",
+  "state": "NY",
+  "postcode": "10001",
+  "country": "US",
+  "phone": "+1 5554443322"
+}
 
-Customer Downloads:
-GET    /wc/v3/customers/{user_id}/downloads
-Use for "Download" tab (returns product name, download_url, access_expires).
-Sample curl:
-curl -X GET \
-  -H "Authorization: Bearer <TOKEN>" \
-  https://<SITE>/wp-json/wc/v3/customers/<USER_ID>/downloads
 
-Account Details Form:
-PUT    /wc/v3/customers/{user_id}
-Body can update name, email, password (use "password" field), billing/shipping data.
+5) Update Account Details
+PUT /account/update
+Body:
+{
+  "first_name": "",
+  "last_name": "",
+  "email": "",
+  "phone": ""
+}
+
+================================================================================
+Fluent form- COMPLETE GUIDE
+================================================================================
+
+http://localhost/wordpress/wp-json/fluentapi/v1/submit  
+
+
+{
+  "form_id": 4,
+  "fields": {
+    "email": "test22@example.com",
+    "names": "buigiudfd"
+  }
+}
 
 ================================================================================
 LOGIN & LOGOUT - COMPLETE GUIDE
@@ -1270,6 +1321,22 @@ Example Request Body (POST /coupons):
 3. CUSTOMERS API
 --------------------------------------------------------------------------------
 
+
+{
+    "email": "customer@example.com",
+    "username": "john_doe",
+    "password": "securepassword",
+    "first_name": "John",
+    "last_name": "Doe",
+    "billing_email": "billing@example.com",
+    "billing_phone": "+1234567890",
+    "billing_address_1": "123 Main St",
+    "billing_city": "New York",
+    "billing_country": "US"
+}
+
+
+
 GET    /customers (requires auth)
        Parameters:
        - per_page (integer, optional): Number of customers (default: 10)
@@ -1325,13 +1392,41 @@ GET    /customers/{id}/orders (requires auth)
        - orderby (string, optional): Order by field (default: date)
        - order (string, optional): ASC or DESC (default: DESC)
 
+POST   /customers/register (public - dedicated registration)
+       Body Parameters:
+       - email (string, required): Customer email (must be valid and unique)
+       - password (string, required): Password (minimum 6 characters)
+       - username (string, optional): Username (auto-generated if not provided)
+       - first_name (string, optional): First name
+       - last_name (string, optional): Last name
+       
+       Response:
+       {
+         "message": "Customer registered successfully",
+         "user_id": 5,
+         "email": "newcustomer@example.com",
+         "username": "newcustomer",
+         "first_name": "John",
+         "last_name": "Smith"
+       }
+       
+       Error responses:
+       - missing_email: Email is required
+       - missing_password: Password is required
+       - invalid_email: Please provide a valid email address
+       - email_exists: This email is already registered
+       - username_exists: This username is already taken
+       - weak_password: Password must be at least 6 characters long
+       - registration_failed: Registration failed with error message
+
 Test URLs:
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/customers
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/customers/123
-POST   http://localhost/wooautopublix/wp-json/restbridge/v1/customers
-PUT    http://localhost/wooautopublix/wp-json/restbridge/v1/customers/123
-DELETE http://localhost/wooautopublix/wp-json/restbridge/v1/customers/123
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/customers/123/orders
+GET    http://localhost/wordpress/wp-json/restbridge/v1/customers
+GET    http://localhost/wordpress/wp-json/restbridge/v1/customers/123
+POST   http://localhost/wordpress/wp-json/restbridge/v1/customers
+POST   http://localhost/wordpress/wp-json/restbridge/v1/customers/register
+PUT    http://localhost/wordpress/wp-json/restbridge/v1/customers/123
+DELETE http://localhost/wordpress/wp-json/restbridge/v1/customers/123
+GET    http://localhost/wordpress/wp-json/restbridge/v1/customers/123/orders
 
 --------------------------------------------------------------------------------
 4. ORDERS API
@@ -2020,279 +2115,6 @@ DELETE /taxes/classes/{slug}
 ELEMENTOR API ENDPOINTS
 ================================================================================
 
---------------------------------------------------------------------------------
-ELEMENTOR PAGES API
---------------------------------------------------------------------------------
-
-GET    /elementor/pages
-       Get all pages that use Elementor
-       Parameters:
-       - per_page (integer, optional): Number of pages per page (default: -1, all)
-       - page (integer, optional): Page number (default: 1)
-       - search (string, optional): Search term
-       - status (string, optional): Page status (default: publish)
-       
-       Response:
-       {
-         "pages": [
-           {
-             "id": 123,
-             "title": "Page Title",
-             "slug": "page-slug",
-             "permalink": "http://example.com/page-slug",
-             "status": "publish",
-             "modified": "2024-01-01 12:00:00"
-           }
-         ],
-         "total": 10,
-         "pages_count": 1
-       }
-
-GET    /elementor/pages/{id}
-       Get Elementor content for a specific page by ID
-       Parameters: None
-       
-       Response:
-       {
-         "page": {
-           "id": 123,
-           "title": "Page Title",
-           "slug": "page-slug",
-           "permalink": "http://example.com/page-slug",
-           "featured_image": "http://example.com/image.jpg"
-         },
-         "sections": [
-           {
-             "index": 0,
-             "type": "section",
-             "settings": {},
-             "columns": [
-               {
-                 "type": "column",
-                 "settings": {},
-                 "widgets": [
-                   {
-                     "type": "heading",
-                     "id": "widget-id",
-                     "settings": {
-                       "title": "Heading Title",
-                       "size": "default",
-                       "alignment": "left"
-                     }
-                   },
-                   {
-                     "type": "text-editor",
-                     "id": "widget-id-2",
-                     "settings": {
-                       "editor": "Text content here",
-                       "alignment": "left"
-                     }
-                   },
-                   {
-                     "type": "button",
-                     "id": "widget-id-3",
-                     "settings": {
-                       "text": "Click Me",
-                       "link": "http://example.com",
-                       "link_text": "http://example.com",
-                       "alignment": "center"
-                     }
-                   },
-                   {
-                     "type": "image",
-                     "id": "widget-id-4",
-                     "settings": {
-                       "image_id": 456,
-                       "image_url": "http://example.com/image.jpg",
-                       "alt": "Image Alt Text",
-                       "caption": "Image Caption",
-                       "alignment": "center"
-                     }
-                   },
-                   {
-                     "type": "image-box",
-                     "id": "widget-id-5",
-                     "settings": {
-                       "title": "Box Title",
-                       "description": "Box description text",
-                       "image_id": 456,
-                       "image_url": "http://example.com/image.jpg"
-                     }
-                   }
-                 ],
-                 "total_widgets": 5
-               }
-             ],
-             "total_columns": 1
-           }
-         ],
-         "total_sections": 1
-       }
-
-GET    /elementor/pages/slug/{slug}
-       Get Elementor content for a page by slug
-       Parameters: None
-       
-       Response: Same as /elementor/pages/{id}
-
-Supported Widget Types:
-- heading: Title with size and alignment
-- text-editor: Text content with alignment
-- button: Button with text, link, and alignment
-- image: Image with URL, alt text, caption
-- image-box: Image with title and description
-- icon-box: Icon with title and description
-- video: Video URL and settings
-- html: Raw HTML content
-- shortcode: Shortcode content
-- spacer: Spacing element
-- divider: Divider line
-- accordion: Accordion with tabs
-- tabs: Tabbed content
-- testimonial: Testimonial with content, name, job, image
-- icon-list: List with icons
-- social-icons: Social media icons
-- Other widget types: Returns all settings as-is
-
-Test URLs:
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/elementor/pages
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/elementor/pages/123
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/elementor/pages/slug/my-page
-
-Example Response Structure:
-- Each page contains sections
-- Each section contains columns
-- Each column contains widgets
-- Widgets have type-specific settings extracted from Elementor data
-- All images include both ID and URL
-- Nested elements (like tabs, accordions) are recursively parsed
-
---------------------------------------------------------------------------------
-GUTENBERG PAGES API
---------------------------------------------------------------------------------
-
-GET    /gutenberg/pages
-       Get all pages that use Gutenberg blocks
-       Parameters:
-       - per_page (integer, optional): Number of pages per page (default: -1, all)
-       - page (integer, optional): Page number (default: 1)
-       - search (string, optional): Search term
-       - status (string, optional): Page status (default: publish)
-       
-       Response:
-       {
-         "pages": [
-           {
-             "id": 123,
-             "title": "Page Title",
-             "slug": "page-slug",
-             "permalink": "http://example.com/page-slug",
-             "status": "publish",
-             "modified": "2024-01-01 12:00:00"
-           }
-         ],
-         "total": 10,
-         "pages_count": 1
-       }
-
-GET    /gutenberg/pages/{id}
-       Get Gutenberg blocks content for a specific page by ID
-       Parameters: None
-       
-       Response:
-       {
-         "page": {
-           "id": 123,
-           "title": "Page Title",
-           "slug": "page-slug",
-           "permalink": "http://example.com/page-slug",
-           "featured_image": "http://example.com/image.jpg",
-           "editor": "gutenberg"
-         },
-         "blocks": [
-           {
-             "index": 0,
-             "type": "heading",
-             "block_name": "core/heading",
-             "content": {
-               "text": "Heading Text",
-               "level": 2,
-               "align": "left"
-             },
-             "attributes": {}
-           },
-           {
-             "index": 1,
-             "type": "paragraph",
-             "block_name": "core/paragraph",
-             "content": {
-               "text": "Paragraph text content",
-               "align": "left",
-               "dropCap": false
-             },
-             "attributes": {}
-           },
-           {
-             "index": 2,
-             "type": "image",
-             "block_name": "core/image",
-             "content": {
-               "image_id": 456,
-               "image_url": "http://example.com/image.jpg",
-               "alt": "Image Alt Text",
-               "caption": "Image Caption",
-               "align": "center"
-             },
-             "attributes": {}
-           },
-           {
-             "index": 3,
-             "type": "button",
-             "block_name": "core/button",
-             "content": {
-               "text": "Click Me",
-               "url": "http://example.com",
-               "linkTarget": "_self",
-               "align": "center"
-             },
-             "attributes": {}
-           }
-         ],
-         "total_blocks": 4
-       }
-
-GET    /gutenberg/pages/slug/{slug}
-       Get Gutenberg blocks content for a page by slug
-       Parameters: None
-       
-       Response: Same as /gutenberg/pages/{id}
-
-Supported Gutenberg Block Types:
-- heading: Title with level and alignment
-- paragraph: Text content with alignment
-- image: Image with URL, alt text, caption
-- button: Button with text, URL, link target
-- gallery: Image gallery with multiple images
-- quote: Quote with citation
-- list: Ordered or unordered list
-- code: Code block
-- html: Raw HTML content
-- columns: Multi-column layout (contains nested blocks)
-- group: Group container (contains nested blocks)
-- cover: Cover block with background (contains nested blocks)
-- media-text: Media and text side by side (contains nested blocks)
-- video: Video with URL and settings
-- audio: Audio player
-- file: File download link
-- table: Table with head and body
-- separator: Divider line
-- spacer: Spacing element
-- Other block types: Returns HTML and text content
-
-Test URLs:
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/gutenberg/pages
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/gutenberg/pages/123
-GET    http://localhost/wooautopublix/wp-json/restbridge/v1/gutenberg/pages/slug/my-page
 
 --------------------------------------------------------------------------------
 UNIVERSAL PAGE CONTENT API (Auto-detect Elementor or Gutenberg)
@@ -2447,7 +2269,7 @@ WordPress REST API supports several authentication methods:
 2. COOKIE AUTHENTICATION (For Logged-In Browser Users)
    - Works automatically if making requests from same browser where logged in
    - Use credentials: 'include' in fetch
-   
+   clear_cart
    JavaScript Example:
    fetch('/wp-json/restbridge/v1/users', {
      credentials: 'include'
@@ -2595,6 +2417,80 @@ NOTES
 9. All prices/amounts should be numeric or string format (e.g., "10.00")
 10. For file uploads (media), use multipart/form-data
 
+================================================================================
+UNIFIED SEARCH API
+================================================================================
+
+Base URL: http://localhost/wordpress/wp-json/restbridge/v1
+
+------------------------------------------------------------------------
+GET /search
+------------------------------------------------------------------------
+
+Unified search endpoint for entire site. Searches across posts, pages, 
+products, and custom content types.
+
+Query Parameters:
+  s             (string, required)   - Search query
+  per_page      (integer, default 20) - Number of results per page
+  page          (integer, default 1)  - Page number
+
+Response Format:
+{
+  "query": "test",
+  "results": [
+    {
+      "id": 365,
+      "title": "Exchange Policy",
+      "excerpt": "...",
+      "content": "...",
+      "type": "page|post|product",
+      "date": "2025-11-20 08:24:23",
+      "modified": "2025-11-20 12:24:28",
+      "permalink": "http://localhost/wordpress/exchange-policy/",
+      "featured_image": "...",
+      "categories": [...],
+      "tags": [...],
+      "price": "99.99",              // products only
+      "rating": 4.5,                  // products only
+      "stock": 50                     // products only
+    }
+  ],
+  "total": 3,
+  "pages": 1,
+  "current_page": 1,
+  "per_page": 20
+}
+
+Examples:
+
+Search for "test":
+GET http://localhost/wordpress/wp-json/restbridge/v1/search?s=test
+
+Search for "blog" with 10 results per page:
+GET http://localhost/wordpress/wp-json/restbridge/v1/search?s=blog&per_page=10
+
+Search for "shirt" on page 2:
+GET http://localhost/wordpress/wp-json/restbridge/v1/search?s=shirt&page=2
+
+
+------------------------------------------------------------------------
+GET /comment blog
+------------------------------------------------------------------------
+
+
+GET http://localhost/wordpress/wp-json/wp/v2/comments
+
+
+
+http://localhost/wordpress/wp-json/wp/v2/comments
+
+{
+  "post": 1,
+  "author_name": "John Doe",
+  "author_email": "john@example.com",
+  "content": "This is my comment!"
+}
 ================================================================================
 END OF DOCUMENTATION
 ================================================================================
