@@ -62,10 +62,53 @@ class RESTBridge_Users_API {
             'callback' => [$this, 'get_users'],
             'permission_callback' => [$this, 'check_simple_token'],
         ]);
+
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/send-email', [
+            'methods' => 'POST',
+            'callback' => [$this, 'send_email_to_update_password'],
+            'permission_callback' => '__return_true'
+        ]);
+
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/update-password', [
+            'methods' => 'POST',
+            'callback' => [$this, 'update_password'],
+            'permission_callback' => '__return_true'
+        ]);
         
         // Add filter to ensure cookies are sent with REST API responses
         add_filter('rest_post_dispatch', [$this, 'ensure_login_cookies'], 10, 3);
 
+        
+
+    }
+
+     public function send_email_to_update_password($request) {
+        $email = sanitize_email($request['email']);
+        
+        $user = get_user_by('email', $email);
+        if (!$user) return new WP_Error('not_found', 'User not found', ['status' => 404]);
+        
+        $token = wp_generate_uuid4();
+        update_user_meta($user->ID, 'update_token', $token);
+        
+        $link = home_url("/update_password?token=$token");
+        wp_mail($email, 'Confirm Update', "Click here: $link");
+        
+        return ['success' => true, 'message' => 'Email sent'];
+    }
+
+    public function update_password($request) {
+        $token = sanitize_text_field($request['token']);
+        $password = $request['password'];
+        
+        $users = get_users(['meta_key' => 'update_token', 'meta_value' => $token, 'number' => 1]);
+        if (empty($users)) return new WP_Error('invalid', 'Bad token', ['status' => 400]);
+        
+        $user_id = $users[0]->ID;
+        wp_set_password($password, $user_id);
+        delete_user_meta($user_id, 'update_token');
+        
+        return ['success' => true, 'message' => 'Password updated!'];
     }
 
     public function get_users(WP_REST_Request $request) {
@@ -220,49 +263,49 @@ class RESTBridge_Users_API {
     }
     
     public function simple_login(WP_REST_Request $request) {
-    $params = $request->get_json_params();
+        $params = $request->get_json_params();
 
-    if (!isset($params['username']) || !isset($params['password'])) {
-        return new WP_Error('missing_fields', 'Username and password required', ['status' => 400]);
+        if (!isset($params['username']) || !isset($params['password'])) {
+            return new WP_Error('missing_fields', 'Username and password required', ['status' => 400]);
+        }
+
+        // Use wp_signon which properly handles login and cookies
+        $credentials = [
+            'user_login' => $params['username'],
+            'user_password' => $params['password'],
+            'remember' => isset($params['remember']) ? (bool) $params['remember'] : false,
+        ];
+        
+        $user = wp_signon($credentials, is_ssl());
+        
+        if (is_wp_error($user)) {
+            return new WP_Error('invalid_login', $user->get_error_message(), ['status' => 401]);
+        }
+
+        // Ensure current user is set (wp_signon should do this, but we make sure)
+        wp_set_current_user($user->ID);
+        
+        // User is now logged in and cookies are set
+        // wp_signon() handles wp_set_auth_cookie() internally, but we ensure current user is set
+        
+        // Create a simple random token for API usage
+        $token = bin2hex(random_bytes(20)); // Example: 3f5ab2c8ea…
+
+        update_user_meta($user->ID, '_api_token', $token); // store token
+
+        // Create response
+        $response = rest_ensure_response([
+            'success' => true,
+            'message' => 'User logged in successfully',
+            'token' => $token,
+            'user_id' => $user->ID,
+            'email' => $user->user_email,
+            'display_name' => $user->display_name,
+            'username' => $user->user_login,
+        ]);
+        
+        return $response;
     }
-
-    // Use wp_signon which properly handles login and cookies
-    $credentials = [
-        'user_login' => $params['username'],
-        'user_password' => $params['password'],
-        'remember' => isset($params['remember']) ? (bool) $params['remember'] : false,
-    ];
-    
-    $user = wp_signon($credentials, is_ssl());
-    
-    if (is_wp_error($user)) {
-        return new WP_Error('invalid_login', $user->get_error_message(), ['status' => 401]);
-    }
-
-    // Ensure current user is set (wp_signon should do this, but we make sure)
-    wp_set_current_user($user->ID);
-    
-    // User is now logged in and cookies are set
-    // wp_signon() handles wp_set_auth_cookie() internally, but we ensure current user is set
-    
-    // Create a simple random token for API usage
-    $token = bin2hex(random_bytes(20)); // Example: 3f5ab2c8ea…
-
-    update_user_meta($user->ID, '_api_token', $token); // store token
-
-    // Create response
-    $response = rest_ensure_response([
-        'success' => true,
-        'message' => 'User logged in successfully',
-        'token' => $token,
-        'user_id' => $user->ID,
-        'email' => $user->user_email,
-        'display_name' => $user->display_name,
-        'username' => $user->user_login,
-    ]);
-    
-    return $response;
-}
     
     /**
      * Ensure cookies are sent with REST API responses for login/logout
@@ -286,49 +329,49 @@ class RESTBridge_Users_API {
         return $result;
     }
 
-public function simple_logout(WP_REST_Request $request) {
-    $user_id = get_current_user_id();
-    
-    if (!$user_id) {
-        // User is not logged in, but return success anyway
+    public function simple_logout(WP_REST_Request $request) {
+        $user_id = get_current_user_id();
+        
+        if (!$user_id) {
+            // User is not logged in, but return success anyway
+            return rest_ensure_response([
+                'success' => true,
+                'message' => 'User already logged out',
+            ]);
+        }
+
+        // Get user info before logout  
+        $user = get_user_by('id', $user_id);
+        $user_email = $user ? $user->user_email : '';
+        
+        // Clear the API token from user meta
+        delete_user_meta($user_id, '_api_token');
+        
+        // Log out the user (clears WordPress authentication cookies)
+        wp_logout();
+        
         return rest_ensure_response([
             'success' => true,
-            'message' => 'User already logged out',
+            'message' => 'User logged out successfully',
+            'user_id' => $user_id,
+            'email' => $user_email,
         ]);
     }
 
-    // Get user info before logout
-    $user = get_user_by('id', $user_id);
-    $user_email = $user ? $user->user_email : '';
-    
-    // Clear the API token from user meta
-    delete_user_meta($user_id, '_api_token');
-    
-    // Log out the user (clears WordPress authentication cookies)
-    wp_logout();
-    
-    return rest_ensure_response([
-        'success' => true,
-        'message' => 'User logged out successfully',
-        'user_id' => $user_id,
-        'email' => $user_email,
-    ]);
-}
+    public function check_simple_token(WP_REST_Request $request) {
+        $auth = $request->get_header('authorization'); // Bearer token
+        if (!$auth) return false;
 
-public function check_simple_token(WP_REST_Request $request) {
-    $auth = $request->get_header('authorization'); // Bearer token
-    if (!$auth) return false;
+        $token = trim(str_replace('Bearer', '', $auth));
 
-    $token = trim(str_replace('Bearer', '', $auth));
+        $users = get_users([
+            'meta_key' => '_api_token',
+            'meta_value' => $token,
+            'number' => 1
+        ]);
 
-    $users = get_users([
-        'meta_key' => '_api_token',
-        'meta_value' => $token,
-        'number' => 1
-    ]);
-
-    return !empty($users);
-}
+        return !empty($users);
+    }
 
     public function generate_user_token(WP_REST_Request $request) {
         $params = $request->get_json_params();
@@ -366,8 +409,6 @@ public function check_simple_token(WP_REST_Request $request) {
             'issued_at' => gmdate('c'),
         ]);
     }
-
-
 
 }
 

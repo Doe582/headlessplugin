@@ -260,6 +260,17 @@ class RESTBridge_Customers_API {
 			return new WP_Error('customer_failed', 'Failed to create customer', ['status' => 500]);
 		}
 
+		// 🔹 Save custom meta
+		if (isset($params['custom_meta']) && is_array($params['custom_meta'])) {
+			foreach ($params['custom_meta'] as $meta_key => $meta_value) {
+				update_user_meta(
+					$customer_id,
+					sanitize_key($meta_key),
+					sanitize_text_field($meta_value)
+				);
+			}
+		}
+
 		return rest_ensure_response($this->format_customer(new WC_Customer($customer_id)), 201);
 	}
 
@@ -297,6 +308,15 @@ class RESTBridge_Customers_API {
 		$username = isset($params['username']) ? sanitize_user($params['username']) : '';
 		$first_name = isset($params['first_name']) ? sanitize_text_field($params['first_name']) : '';
 		$last_name = isset($params['last_name']) ? sanitize_text_field($params['last_name']) : '';
+		$billing_email = isset($params['billing_email']) ? sanitize_email($params['billing_email']) : '';
+		$billing_phone      = isset($params['billing_phone']) ? sanitize_text_field($params['billing_phone']) : '';
+		$billing_address_1  = isset($params['billing_address_1']) ? sanitize_text_field($params['billing_address_1']) : '';
+		$billing_address_2  = isset($params['billing_address_2']) ? sanitize_text_field($params['billing_address_2']) : '';
+		$billing_city       = isset($params['billing_city']) ? sanitize_text_field($params['billing_city']) : '';
+		$billing_state      = isset($params['billing_state']) ? sanitize_text_field($params['billing_state']) : '';
+		$billing_postcode   = isset($params['billing_postcode']) ? sanitize_text_field($params['billing_postcode']) : '';
+		$billing_country    = isset($params['billing_country']) ? sanitize_text_field($params['billing_country']) : '';
+
 
 		// Validate email
 		if (!is_email($email)) {
@@ -348,10 +368,75 @@ class RESTBridge_Customers_API {
 
 		// Create WooCommerce customer
 		$customer = new WC_Customer($user_id);
+
 		$customer->set_email($email);
 		$customer->set_first_name($first_name);
 		$customer->set_last_name($last_name);
+
+		// Billing fields
+		if ($billing_email) {
+			$customer->set_billing_email($billing_email);
+		}
+		if ($billing_phone) {
+			$customer->set_billing_phone($billing_phone);
+		}
+		if ($billing_address_1) {
+			$customer->set_billing_address_1($billing_address_1);
+		}
+		if ($billing_address_2) {
+			$customer->set_billing_address_2($billing_address_2);
+		}
+		if ($billing_city) {
+			$customer->set_billing_city($billing_city);
+		}
+		if ($billing_state) {
+			$customer->set_billing_state($billing_state);
+		}
+		if ($billing_postcode) {
+			$customer->set_billing_postcode($billing_postcode);
+		}
+		if ($billing_country) {
+			$customer->set_billing_country($billing_country);
+		}
+
 		$customer->save();
+
+
+		if (isset($params['custom_meta']) && is_array($params['custom_meta'])) {
+
+			$blocked_meta_keys = [
+				'user_pass',
+				'user_login',
+				'user_email',
+				'wp_capabilities',
+				'wp_user_level',
+				'dismissed_wp_pointers',
+				'session_tokens'
+			];
+
+			foreach ($params['custom_meta'] as $meta_key => $meta_value) {
+
+				if (!is_string($meta_key)) {
+					continue;
+				}
+
+				$meta_key = sanitize_key($meta_key);
+
+				if (in_array($meta_key, $blocked_meta_keys, true)) {
+					continue;
+				}
+
+				if (is_array($meta_value) || is_object($meta_value)) {
+					update_user_meta($user_id, $meta_key, wp_json_encode($meta_value));
+				} else {
+					update_user_meta(
+						$user_id,
+						$meta_key,
+						sanitize_text_field($meta_value)
+					);
+				}
+			}
+		}
 
 		// Do registration action hook
 		do_action('customer_register', $user_id);
@@ -372,6 +457,7 @@ class RESTBridge_Customers_API {
 		}
 
 		$customer_id = (int) $request['id'];
+		
 		$current_user_id = get_current_user_id();
 
 		// Check if user is authenticated
@@ -380,7 +466,7 @@ class RESTBridge_Customers_API {
 		}
 
 		// Check if current user is admin
-		$is_admin = $this->is_admin_user();
+		$is_admin = current_user_can('manage_woocommerce') || current_user_can('administrator');
 
 		// If not admin, user can only update their own customer data
 		if (!$is_admin && $current_user_id !== $customer_id) {
@@ -491,9 +577,9 @@ class RESTBridge_Customers_API {
 			$customer->set_shipping_country(sanitize_text_field($params['shipping_country']));
 		}
 
-		if (isset($params['password'])) {
-			$customer->set_password($params['password']);
-		}
+		// if (isset($params['password'])) {
+		// 	$customer->set_password($params['password']);
+		// }
 
 		$customer->save();
 
@@ -649,24 +735,27 @@ class RESTBridge_Customers_API {
 
 	public function check_permission($request = null) {
 		$user_id = get_current_user_id();
-		
-		// Fallback: Try Basic Auth if not authenticated
+
+		// 🔁 Basic Auth fallback (optional, keep if you need it)
 		if (!$user_id && $request) {
 			$auth_header = $request->get_header('authorization');
+
 			if ($auth_header && preg_match('/Basic\s+(.+)$/i', $auth_header, $matches)) {
 				$credentials = base64_decode($matches[1]);
 				if (strpos($credentials, ':') !== false) {
 					list($username, $password) = explode(':', $credentials, 2);
 					$user = wp_authenticate($username, $password);
+
 					if (!is_wp_error($user)) {
-						wp_set_current_user($user->ID);	
+						wp_set_current_user($user->ID);
 						$user_id = $user->ID;
 					}
 				}
 			}
 		}
-		
-		return $user_id && (current_user_can('manage_woocommerce') || current_user_can('manage_options') || in_array('administrator', (array)wp_get_current_user()->roles));
+
+		// ✅ ONLY check authentication here
+		return (bool) $user_id;
 	}
 }
 
