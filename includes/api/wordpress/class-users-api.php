@@ -3,51 +3,70 @@
 class RESTBridge_Users_API {
 
     public function register_routes() {
-        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/users', [
-            'methods' => 'GET',
-            'callback' => [$this, 'get_users'],
-            'permission_callback' => [$this, 'check_permission'],
-        ]);
-
-        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/users', [
-            'methods' => 'POST',
-            'callback' => [$this, 'create_user'],
-            'permission_callback' => true,
-        ]);
-
-        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/users/(?P<id>\\d+)', [
-            'methods' => 'GET',
-            'callback' => [$this, 'get_user'],
-            'permission_callback' => [$this, 'check_permission'],
-        ]);
-
-        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/users/(?P<id>\\d+)', [
-            'methods' => 'PUT',
-            'callback' => [$this, 'update_user'],
-            'permission_callback' => [$this, 'check_permission'],
-        ]);
-
-        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/users/(?P<id>\\d+)', [
-            'methods' => 'DELETE',
-            'callback' => [$this, 'delete_user'],
-            'permission_callback' => [$this, 'check_permission'],
-        ]);
-
-        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/users/me', [
-            'methods' => 'GET',
-            'callback' => [$this, 'get_current_user'],
-            'permission_callback' => '__return_true',
-        ]);
 
         register_rest_route(RESTBRIDGE_API_NAMESPACE, '/login', [
-            'methods' => 'POST',
+            'methods'  => 'POST',
             'callback' => [$this, 'simple_login'],
             'permission_callback' => '__return_true',
         ]);
 
         register_rest_route(RESTBRIDGE_API_NAMESPACE, '/logout', [
-            'methods' => 'POST',
+            'methods'  => 'POST',
             'callback' => [$this, 'simple_logout'],
+            'permission_callback' => '__return_true',
+        ]);
+
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/users/me', [
+            'methods'  => 'GET',
+            'callback' => [$this, 'get_current_user'],
+            'permission_callback' => '__return_true',
+        ]);
+
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/users', [
+            'methods'  => 'GET',
+            'callback' => [$this, 'get_users'],
+            'permission_callback' => [$this, 'permission_users_list'],
+        ]);
+
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/users', [
+            'methods'  => 'POST',
+            'callback' => [$this, 'create_user'],
+            'permission_callback' => '__return_true',
+        ]);
+
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/users/(?P<id>\d+)', [
+            'methods'  => 'PUT',
+            'callback' => [$this, 'update_user'],
+            'permission_callback' => [$this, 'check_admin'],
+        ]);
+
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/users/(?P<id>\d+)', [
+            'methods'  => 'DELETE',
+            'callback' => [$this, 'delete_user'],
+            'permission_callback' => [$this, 'check_admin'],
+        ]);
+
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/send-email', [
+            'methods'  => 'POST',
+            'callback' => [$this, 'send_password_reset_email'],
+            'permission_callback' => '__return_true',
+        ]);
+
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/update-password', [
+            'methods'  => 'POST',
+            'callback' => [$this, 'update_password'],
+            'permission_callback' => '__return_true',
+        ]);
+
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/third-party-login', [
+            'methods'  => 'POST',
+            'callback' => [$this, 'google_auth'],
+            'permission_callback' => '__return_true',
+        ]);
+
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/auth/status', [
+            'methods'  => 'GET',
+            'callback' => [$this, 'check_auth_status'],
             'permission_callback' => '__return_true',
         ]);
 
@@ -57,320 +76,393 @@ class RESTBridge_Users_API {
             'permission_callback' => '__return_true',
         ]);
 
-        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/users', [
-            'methods' => 'GET',
-            'callback' => [$this, 'get_users'],
-            'permission_callback' => [$this, 'check_simple_token'],
-        ]);
-
-        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/send-email', [
-            'methods' => 'POST',
-            'callback' => [$this, 'send_email_to_update_password'],
-            'permission_callback' => '__return_true'
-        ]);
-
-        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/update-password', [
-            'methods' => 'POST',
-            'callback' => [$this, 'update_password'],
-            'permission_callback' => '__return_true'
-        ]);
-        
-        // Add filter to ensure cookies are sent with REST API responses
-        add_filter('rest_post_dispatch', [$this, 'ensure_login_cookies'], 10, 3);
-
-        
-
     }
 
-     public function send_email_to_update_password($request) {
-        $email = sanitize_email($request['email']);
-        
-        $user = get_user_by('email', $email);
-        if (!$user) return new WP_Error('not_found', 'User not found', ['status' => 404]);
-        
-        $token = wp_generate_uuid4();
-        update_user_meta($user->ID, 'update_token', $token);
-        
-        $link = home_url("/update_password?token=$token");
-        wp_mail($email, 'Confirm Update', "Click here: $link");
-        
-        return ['success' => true, 'message' => 'Email sent'];
+    private function extract_bearer_token(WP_REST_Request $request) {
+
+        // 1. WordPress REST API (preferred)
+        $auth = $request->get_header('authorization');
+
+        // 2. Standard PHP server var
+        if (!$auth && isset($_SERVER['HTTP_AUTHORIZATION'])) {
+            $auth = $_SERVER['HTTP_AUTHORIZATION'];
+        }
+
+        // 3. FastCGI / Nginx
+        if (!$auth && isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+            $auth = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+        }
+
+        // 4. Apache fallback
+        if (!$auth && function_exists('apache_request_headers')) {
+            $headers = apache_request_headers();
+            if (isset($headers['Authorization'])) {
+                $auth = $headers['Authorization'];
+            }
+        }
+
+        // 5. Custom header fallback (frontend safety)
+        if (!$auth && isset($_SERVER['HTTP_X_BEARER_TOKEN'])) {
+            return sanitize_text_field($_SERVER['HTTP_X_BEARER_TOKEN']);
+        }
+
+        // 6. Extract Bearer
+        if ($auth && preg_match('/Bearer\s+(.+)/i', $auth, $matches)) {
+            return trim($matches[1]);
+        }
+
+        // 7. Query param fallback (last resort)
+        $param = $request->get_param('token');
+        if (!empty($param)) {
+            return sanitize_text_field($param);
+        }
+
+        return '';
     }
 
-    public function update_password($request) {
-        $token = sanitize_text_field($request['token']);
-        $password = $request['password'];
-        
-        $users = get_users(['meta_key' => 'update_token', 'meta_value' => $token, 'number' => 1]);
-        if (empty($users)) return new WP_Error('invalid', 'Bad token', ['status' => 400]);
-        
-        $user_id = $users[0]->ID;
-        wp_set_password($password, $user_id);
-        delete_user_meta($user_id, 'update_token');
-        
-        return ['success' => true, 'message' => 'Password updated!'];
+
+    private function get_user_from_token(WP_REST_Request $request) {
+
+        $token = $this->extract_bearer_token($request);
+        if (!$token) return 0;
+
+        $users = get_users([
+            'meta_key' => '_api_tokens',
+            'number'   => 200,
+        ]);
+
+        foreach ($users as $user) {
+            $tokens = get_user_meta($user->ID, '_api_tokens', true);
+            if (!is_array($tokens)) continue;
+
+            foreach ($tokens as $t) {
+                if (isset($t['token']) && $t['token'] === $token) {
+                    return (int) $user->ID;
+                }
+            }
+        }
+
+        return 0;
+    }
+
+
+    public function check_simple_token(WP_REST_Request $request) {
+        return (bool) $this->get_user_from_token($request);
+    }
+
+    public function check_admin() {
+        return current_user_can('manage_options');
+    }
+
+    public function permission_users_list(WP_REST_Request $request) {
+        if (current_user_can('manage_options')) return true;
+        return $this->check_simple_token($request);
+    }
+
+    /* ===============================
+     * LOGIN
+     * =============================== */
+
+   public function simple_login(WP_REST_Request $request) {
+
+        $p = $request->get_json_params();
+
+        if (empty($p['username']) || empty($p['password'])) {
+            return new WP_Error('missing', 'Username & password required', ['status' => 400]);
+        }
+
+        $user = wp_signon([
+            'user_login'    => sanitize_text_field($p['username']),
+            'user_password' => $p['password'],
+        ], is_ssl());
+
+        if (is_wp_error($user)) {
+            return new WP_Error('invalid', 'Invalid credentials', ['status' => 401]);
+        }
+
+        // Set WP session cookies
+        wp_set_current_user($user->ID);
+        wp_set_auth_cookie($user->ID, true);
+
+        $device = sanitize_text_field($p['device'] ?? 'unknown');
+
+        // Get existing tokens
+        $tokens = get_user_meta($user->ID, '_api_tokens', true);
+        $tokens = is_array($tokens) ? $tokens : [];
+
+        // Remove old token for same device
+        $tokens = array_filter($tokens, fn($t) => $t['device'] !== $device);
+
+        // Generate PLAIN token
+        $token = bin2hex(random_bytes(32));
+
+        $tokens[] = [
+            'token'   => $token,   // 👈 stored as-is
+            'device'  => $device,
+            'created' => time(),
+        ];
+
+        update_user_meta($user->ID, '_api_tokens', array_values($tokens));
+
+        return rest_ensure_response([
+            'success' => true,
+            'token'   => $token,
+            'type'    => 'Bearer',
+            'user'    => $this->format_user($user),
+        ]);
+    }
+
+
+    /* ===============================
+     * LOGOUT
+     * =============================== */
+
+    public function simple_logout(WP_REST_Request $request) {
+
+        $token = $this->extract_bearer_token($request);
+        if (!$token) {
+            return new WP_Error('missing_token', 'Authorization token missing', ['status' => 401]);
+        }
+
+        $user_id = $this->get_user_from_token($request);
+        if (!$user_id) {
+            return new WP_Error('invalid_token', 'Invalid token', ['status' => 401]);
+        }
+
+        $tokens = get_user_meta($user_id, '_api_tokens', true);
+        $tokens = is_array($tokens) ? $tokens : [];
+
+        $tokens = array_values(array_filter($tokens, function ($t) use ($token) {
+            return $t['token'] !== $token;
+        }));
+
+        update_user_meta($user_id, '_api_tokens', $tokens);
+
+        wp_logout();
+
+        return [
+            'success' => true,
+            'message' => 'Logged out successfully',
+        ];
+    }
+
+
+    /* ===============================
+     * USERS
+     * =============================== */
+
+    public function get_current_user() {
+        $id = get_current_user_id();
+        if (!$id) return new WP_Error('unauthorized', 'Not logged in', ['status'=>401]);
+        return $this->format_user(get_user_by('id',$id));
     }
 
     public function get_users(WP_REST_Request $request) {
-        $params = $request->get_query_params();
-        
-        $args = [
-            'number' => isset($params['per_page']) ? (int) $params['per_page'] : 10,
-            'offset' => isset($params['page']) ? ((int) $params['page'] - 1) * (int) $params['per_page'] : 0,
-            'orderby' => isset($params['orderby']) ? sanitize_text_field($params['orderby']) : 'registered',
-            'order' => isset($params['order']) ? sanitize_text_field($params['order']) : 'DESC',
-        ];
-
-        if (isset($params['search'])) {
-            $args['search'] = '*' . sanitize_text_field($params['search']) . '*';
-        }
-
-        if (isset($params['role'])) {
-            $args['role'] = sanitize_text_field($params['role']);
-        }
-
-        $users = get_users($args);
-        $formatted_users = array_map([$this, 'format_user'], $users);
-
-        return rest_ensure_response([
-            'users' => $formatted_users,
-            'total' => count_users()['total_users'],
-        ]);
-    }
-
-    public function get_user(WP_REST_Request $request) {
-        $user_id = (int) $request['id'];
-        $user = get_user_by('id', $user_id);
-
-        if (!$user) {
-            return new WP_Error('user_not_found', 'User not found', ['status' => 404]);
-        }
-
-        return rest_ensure_response($this->format_user($user));
-    }
-
-    public function get_current_user() {
-        $user_id = get_current_user_id();
-        
-        if (!$user_id) {
-            return new WP_Error('not_authenticated', 'User not authenticated', ['status' => 401]);
-        }
-
-        $user = get_user_by('id', $user_id);
-        return rest_ensure_response($this->format_user($user));
+        $users = get_users(['number'=>20]);
+        return array_map([$this,'format_user'],$users);
     }
 
     public function create_user(WP_REST_Request $request) {
-        $params = $request->get_json_params();
+        $p = $request->get_json_params();
 
-        $user_data = [
-            'user_login' => isset($params['username']) ? sanitize_user($params['username']) : '',
-            'user_email' => isset($params['email']) ? sanitize_email($params['email']) : '',
-            'user_pass' => isset($params['password']) ? $params['password'] : wp_generate_password(),
-            'role' => isset($params['role']) ? sanitize_text_field($params['role']) : 'subscriber',
-        ];
+        $id = wp_insert_user([
+            'user_login' => sanitize_user($p['username']),
+            'user_email' => sanitize_email($p['email']),
+            'user_pass'  => $p['password'],
+            'role'       => 'subscriber',
+        ]);
 
-        if (isset($params['display_name'])) {
-            $user_data['display_name'] = sanitize_text_field($params['display_name']);
-        }
+        if (is_wp_error($id)) return $id;
 
-        if (isset($params['first_name'])) {
-            $user_data['first_name'] = sanitize_text_field($params['first_name']);
-        }
-
-        if (isset($params['last_name'])) {
-            $user_data['last_name'] = sanitize_text_field($params['last_name']);
-        }
-
-        $user_id = wp_insert_user($user_data);
-
-        if (is_wp_error($user_id)) {
-            return $user_id;
-        }
-
-        return rest_ensure_response($this->format_user(get_user_by('id', $user_id)), 201);
+        return $this->format_user(get_user_by('id',$id));
     }
 
     public function update_user(WP_REST_Request $request) {
-        $user_id = (int) $request['id'];
-        $params = $request->get_json_params();
-
-        $user = get_user_by('id', $user_id);
-        if (!$user) {
-            return new WP_Error('user_not_found', 'User not found', ['status' => 404]);
-        }
-
-        $user_data = ['ID' => $user_id];
-        
-        if (isset($params['email'])) {
-            $user_data['user_email'] = sanitize_email($params['email']);
-        }
-        if (isset($params['password'])) {
-            $user_data['user_pass'] = $params['password'];
-        }
-        if (isset($params['role'])) {
-            $user_data['role'] = sanitize_text_field($params['role']);
-        }
-        if (isset($params['display_name'])) {
-            $user_data['display_name'] = sanitize_text_field($params['display_name']);
-        }
-        if (isset($params['first_name'])) {
-            $user_data['first_name'] = sanitize_text_field($params['first_name']);
-        }
-        if (isset($params['last_name'])) {
-            $user_data['last_name'] = sanitize_text_field($params['last_name']);
-        }
-
-        $updated = wp_update_user($user_data);
-
-        if (is_wp_error($updated)) {
-            return $updated;
-        }
-
-        return rest_ensure_response($this->format_user(get_user_by('id', $user_id)));
+        $id = (int)$request['id'];
+        wp_update_user(['ID'=>$id,'user_email'=>sanitize_email($request['email'])]);
+        return $this->format_user(get_user_by('id',$id));
     }
 
     public function delete_user(WP_REST_Request $request) {
-        $user_id = (int) $request['id'];
-        $reassign = isset($request['reassign']) ? (int) $request['reassign'] : null;
-
-        require_once(ABSPATH . 'wp-admin/includes/user.php');
-        $result = wp_delete_user($user_id, $reassign);
-
-        if (!$result) {
-            return new WP_Error('delete_failed', 'Failed to delete user', ['status' => 500]);
-        }
-
-        return rest_ensure_response(['deleted' => true, 'id' => $user_id]);
+        require_once ABSPATH.'wp-admin/includes/user.php';
+        wp_delete_user((int)$request['id']);
+        return ['deleted'=>true];
     }
-    
+
     private function format_user($user) {
         return [
             'id' => $user->ID,
             'username' => $user->user_login,
             'email' => $user->user_email,
             'display_name' => $user->display_name,
-            'first_name' => get_user_meta($user->ID, 'first_name', true),
-            'last_name' => get_user_meta($user->ID, 'last_name', true),
-            'registered' => $user->user_registered,
             'roles' => $user->roles,
             'avatar' => get_avatar_url($user->ID),
         ];
     }
 
-    public function check_permission() {
-        return current_user_can('manage_options');
+    /* ===============================
+     * PASSWORD RESET
+     * =============================== */
+
+    public function send_password_reset_email(WP_REST_Request $request) {
+        $email = sanitize_email($request['email']);
+        $user = get_user_by('email',$email);
+        if (!$user) return new WP_Error('not_found','User not found',['status'=>404]);
+
+        $token = bin2hex(random_bytes(32));
+        update_user_meta($user->ID,'reset_hash',hash('sha256',$token));
+        update_user_meta($user->ID,'reset_expiry',time()+3600);
+
+        wp_mail($email,'Reset Password',"Token: $token");
+        return ['success'=>true];
     }
-    
-    public function simple_login(WP_REST_Request $request) {
+
+    public function update_password(WP_REST_Request $request) {
+        $token = $request['token'];
+        $hash  = hash('sha256',$token);
+
+        $users = get_users([
+            'meta_query'=>[
+                ['key'=>'reset_hash','value'=>$hash],
+                ['key'=>'reset_expiry','value'=>time(),'compare'=>'>'],
+            ],
+            'number'=>1
+        ]);
+
+        if (!$users) return new WP_Error('invalid','Token expired',['status'=>400]);
+
+        wp_set_password($request['password'],$users[0]->ID);
+        delete_user_meta($users[0]->ID,'reset_hash');
+        delete_user_meta($users[0]->ID,'reset_expiry');
+
+        return ['success'=>true];
+    }
+
+    public function google_auth(WP_REST_Request $request) {
+
         $params = $request->get_json_params();
 
-        if (!isset($params['username']) || !isset($params['password'])) {
-            return new WP_Error('missing_fields', 'Username and password required', ['status' => 400]);
+        $email  = sanitize_email($params['email'] ?? '');
+        $name   = sanitize_text_field($params['name'] ?? '');
+        $avatar = esc_url_raw($params['avatar'] ?? '');
+        $device = sanitize_text_field($params['device'] ?? 'google');
+
+        if (empty($email)) {
+            return new WP_Error('missing_email', 'Email is required', ['status' => 400]);
         }
 
-        // Use wp_signon which properly handles login and cookies
-        $credentials = [
-            'user_login' => $params['username'],
-            'user_password' => $params['password'],
-            'remember' => isset($params['remember']) ? (bool) $params['remember'] : false,
-        ];
-        
-        $user = wp_signon($credentials, is_ssl());
-        
-        if (is_wp_error($user)) {
-            return new WP_Error('invalid_login', $user->get_error_message(), ['status' => 401]);
+        // 🔹 Track new vs existing user
+        $is_new_user = false;
+
+        // 🔹 Check if user exists
+        $user = get_user_by('email', $email);
+
+        // 🔹 Create user if not exists
+        if (!$user) {
+            $is_new_user = true;
+
+            $username = sanitize_user(current(explode('@', $email)));
+
+            // Ensure unique username
+            if (username_exists($username)) {
+                $username .= '_' . wp_generate_password(4, false);
+            }
+
+            $user_id = wp_insert_user([
+                'user_login'   => $username,
+                'user_email'   => $email,
+                'user_pass'    => wp_generate_password(24, true),
+                'display_name' => $name ?: $username,
+                'role'         => 'customer',
+            ]);
+
+            if (is_wp_error($user_id)) {
+                return $user_id;
+            }
+
+            $user = get_user_by('id', $user_id);
+
+            // Save Google avatar (optional)
+            if ($avatar) {
+                update_user_meta($user->ID, 'google_avatar', $avatar);
+            }
+
+            update_user_meta($user->ID, '_signup_provider', 'google');
         }
 
-        // Ensure current user is set (wp_signon should do this, but we make sure)
+        // 🔹 Set WordPress session (important)
         wp_set_current_user($user->ID);
-        
-        // User is now logged in and cookies are set
-        // wp_signon() handles wp_set_auth_cookie() internally, but we ensure current user is set
-        
-        // Create a simple random token for API usage
-        $token = bin2hex(random_bytes(20)); // Example: 3f5ab2c8ea…
+        wp_set_auth_cookie($user->ID, true);
 
-        update_user_meta($user->ID, '_api_token', $token); // store token
+        // 🔹 Handle tokens (multi-device safe)
+        $tokens = get_user_meta($user->ID, '_api_tokens', true);
+        $tokens = is_array($tokens) ? $tokens : [];
 
-        // Create response
-        $response = rest_ensure_response([
+        // Remove old token for same device
+        $tokens = array_filter($tokens, fn($t) => $t['device'] !== $device);
+
+        // Generate new token
+        $token = bin2hex(random_bytes(32));
+        $hash  = hash('sha256', $token);
+
+        $tokens[] = [
+            'hash'     => $hash,
+            'device'   => $device,
+            'provider' => 'google',
+            'created'  => time(),
+        ];
+
+        update_user_meta($user->ID, '_api_tokens', array_values($tokens));
+
+        // 🔹 Response
+        return rest_ensure_response([
             'success' => true,
-            'message' => 'User logged in successfully',
-            'token' => $token,
-            'user_id' => $user->ID,
-            'email' => $user->user_email,
-            'display_name' => $user->display_name,
-            'username' => $user->user_login,
+            'token'   => $token,
+            'type'    => 'Bearer',
+            'is_new'  => $is_new_user,
+            'user'    => [
+                'id'           => $user->ID,
+                'email'        => $user->user_email,
+                'username'     => $user->user_login,
+                'display_name' => $user->display_name,
+                'roles'        => $user->roles,
+                'avatar'       => $avatar ?: get_avatar_url($user->ID),
+            ],
         ]);
-        
-        return $response;
-    }
-    
-    /**
-     * Ensure cookies are sent with REST API responses for login/logout
-     */
-    public function ensure_login_cookies($result, $server, $request) {
-        $route = $request->get_route();
-        
-        // Only handle our login/logout endpoints
-        if (strpos($route, '/restbridge/v1/login') === false && strpos($route, '/restbridge/v1/logout') === false) {
-            return $result;
-        }
-        
-        // Cookies should already be set via wp_set_auth_cookie() or wp_clear_auth_cookie()
-        // These use setcookie() which sends Set-Cookie headers
-        // WordPress REST API should include these in the response automatically
-        // But we ensure they're sent by checking if headers were sent
-        
-        // The cookies are set in the login/logout methods via wp_set_auth_cookie()
-        // which calls setcookie() - these headers should be in the response
-        
-        return $result;
     }
 
-    public function simple_logout(WP_REST_Request $request) {
+    public function check_auth_status(WP_REST_Request $request) {
+
+        // Cookie-based login (WordPress / WooCommerce)
         $user_id = get_current_user_id();
-        
+
+        // Token-based login (headless)
         if (!$user_id) {
-            // User is not logged in, but return success anyway
+            $user_id = $this->get_user_from_token($request);
+        }
+
+        // Not logged in
+        if (!$user_id) {
             return rest_ensure_response([
-                'success' => true,
-                'message' => 'User already logged out',
+                'logged_in' => false,
+                'user'      => null,
             ]);
         }
 
-        // Get user info before logout  
+        // Logged in
         $user = get_user_by('id', $user_id);
-        $user_email = $user ? $user->user_email : '';
-        
-        // Clear the API token from user meta
-        delete_user_meta($user_id, '_api_token');
-        
-        // Log out the user (clears WordPress authentication cookies)
-        wp_logout();
-        
+
         return rest_ensure_response([
-            'success' => true,
-            'message' => 'User logged out successfully',
-            'user_id' => $user_id,
-            'email' => $user_email,
+            'logged_in' => true,
+            'user' => [
+                'id'           => $user->ID,
+                'email'        => $user->user_email,
+                'username'     => $user->user_login,
+                'display_name' => $user->display_name,
+                'roles'        => $user->roles,
+                'avatar'       => get_avatar_url($user->ID),
+            ],
         ]);
-    }
-
-    public function check_simple_token(WP_REST_Request $request) {
-        $auth = $request->get_header('authorization'); // Bearer token
-        if (!$auth) return false;
-
-        $token = trim(str_replace('Bearer', '', $auth));
-
-        $users = get_users([
-            'meta_key' => '_api_token',
-            'meta_value' => $token,
-            'number' => 1
-        ]);
-
-        return !empty($users);
     }
 
     public function generate_user_token(WP_REST_Request $request) {
@@ -398,7 +490,16 @@ class RESTBridge_Users_API {
             return new WP_Error('token_generation_failed', 'Unable to generate token', ['status' => 500]);
         }
 
-        update_user_meta($user->ID, '_api_token', $token);
+        // tokens
+        $tokens = get_user_meta($user->ID, '_api_tokens', true);
+        $tokens = is_array($tokens) ? $tokens : [];
+
+        $tokens[] = [
+            'token'  => $token,
+            'device' => 'api',
+        ];
+
+        update_user_meta($user->ID, '_api_tokens', array_values($tokens));
 
         return rest_ensure_response([
             'token_type' => 'Bearer',
@@ -410,5 +511,5 @@ class RESTBridge_Users_API {
         ]);
     }
 
-}
 
+}
