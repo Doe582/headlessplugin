@@ -46,7 +46,7 @@ class RESTBridge_Users_API {
             'permission_callback' => [$this, 'check_admin'],
         ]);
 
-        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/send-email', [
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/reset-password', [
             'methods'  => 'POST',
             'callback' => [$this, 'send_password_reset_email'],
             'permission_callback' => '__return_true',
@@ -165,86 +165,100 @@ class RESTBridge_Users_API {
 
    public function simple_login(WP_REST_Request $request) {
 
-        $p = $request->get_json_params();
+    $p = $request->get_json_params();
 
-        if (empty($p['username']) || empty($p['password'])) {
-            return new WP_Error('missing', 'Username & password required', ['status' => 400]);
-        }
-
-        $user = wp_signon([
-            'user_login'    => sanitize_text_field($p['username']),
-            'user_password' => $p['password'],
-        ], is_ssl());
-
-        if (is_wp_error($user)) {
-            return new WP_Error('invalid', 'Invalid credentials', ['status' => 401]);
-        }
-
-        // Set WP session cookies
-        wp_set_current_user($user->ID);
-        wp_set_auth_cookie($user->ID, true);
-
-        $device = sanitize_text_field($p['device'] ?? 'unknown');
-
-        // Get existing tokens
-        $tokens = get_user_meta($user->ID, '_api_tokens', true);
-        $tokens = is_array($tokens) ? $tokens : [];
-
-        // Remove old token for same device
-        $tokens = array_filter($tokens, fn($t) => $t['device'] !== $device);
-
-        // Generate PLAIN token
-        $token = bin2hex(random_bytes(32));
-
-        $tokens[] = [
-            'token'   => $token,   // 👈 stored as-is
-            'device'  => $device,
-            'created' => time(),
-        ];
-
-        update_user_meta($user->ID, '_api_tokens', array_values($tokens));
-
-        return rest_ensure_response([
-            'success' => true,
-            'token'   => $token,
-            'type'    => 'Bearer',
-            'user'    => $this->format_user($user),
-        ]);
+    if (empty($p['username']) || empty($p['password'])) {
+        return new WP_Error('missing', 'Username & password required', ['status' => 400]);
     }
 
+    $user = wp_signon([
+        'user_login'    => sanitize_text_field($p['username']),
+        'user_password' => $p['password'],
+    ], is_ssl());
+
+    if (is_wp_error($user)) {
+        return new WP_Error('invalid', 'Invalid credentials', ['status' => 401]);
+    }
+
+    // 🔹 Set WP session
+    wp_set_current_user($user->ID);
+    wp_set_auth_cookie($user->ID, true);
+
+    $device = sanitize_text_field($p['device'] ?? 'web');
+
+    // 🔹 Handle tokens
+    $tokens = get_user_meta($user->ID, '_api_tokens', true);
+    $tokens = $this->normalize_tokens($tokens);
+
+    // Remove old token for same device
+    $tokens = array_filter($tokens, fn($t) => ($t['device'] ?? '') !== $device);
+
+    // Generate ONE plain token
+    $token = bin2hex(random_bytes(32));
+
+    $tokens[] = [
+        'token'    => $token,
+        'device'   => $device,
+        'provider' => 'password',
+        'created'  => time(),
+    ];
+
+    update_user_meta($user->ID, '_api_tokens', array_values($tokens));
+
+    return rest_ensure_response([
+        'success' => true,
+        'token'   => $token,
+        'type'    => 'Bearer',
+        'user'    => $this->format_user($user),
+    ]);
+}
 
     /* ===============================
      * LOGOUT
      * =============================== */
 
-    public function simple_logout(WP_REST_Request $request) {
+   public function simple_logout(WP_REST_Request $request) {
 
-        $token = $this->extract_bearer_token($request);
-        if (!$token) {
-            return new WP_Error('missing_token', 'Authorization token missing', ['status' => 401]);
-        }
-
-        $user_id = $this->get_user_from_token($request);
-        if (!$user_id) {
-            return new WP_Error('invalid_token', 'Invalid token', ['status' => 401]);
-        }
-
-        $tokens = get_user_meta($user_id, '_api_tokens', true);
-        $tokens = is_array($tokens) ? $tokens : [];
-
-        $tokens = array_values(array_filter($tokens, function ($t) use ($token) {
-            return $t['token'] !== $token;
-        }));
-
-        update_user_meta($user_id, '_api_tokens', $tokens);
-
-        wp_logout();
-
-        return [
-            'success' => true,
-            'message' => 'Logged out successfully',
-        ];
+    // 🔹 Extract Bearer token
+    $token = $this->extract_bearer_token($request);
+    if (!$token) {
+        return new WP_Error(
+            'missing_token',
+            'Authorization token missing',
+            ['status' => 401]
+        );
     }
+
+    // 🔹 Resolve user from token
+    $user_id = $this->get_user_from_token($request);
+    if (!$user_id) {
+        return new WP_Error(
+            'invalid_token',
+            'Invalid token',
+            ['status' => 401]
+        );
+    }
+
+    // 🔹 Load & normalize tokens
+    $tokens = get_user_meta($user_id, '_api_tokens', true);
+    $tokens = $this->normalize_tokens($tokens);
+
+    // 🔹 Remove ONLY this token
+    $tokens = array_values(array_filter($tokens, function ($t) use ($token) {
+        return isset($t['token']) && $t['token'] !== $token;
+    }));
+
+    update_user_meta($user_id, '_api_tokens', $tokens);
+
+    // 🔹 Logout WP session (cookies)
+    wp_logout();
+
+    return rest_ensure_response([
+        'success' => true,
+        'message' => 'Logged out successfully',
+    ]);
+}
+
 
 
     /* ===============================
@@ -305,38 +319,66 @@ class RESTBridge_Users_API {
      * =============================== */
 
     public function send_password_reset_email(WP_REST_Request $request) {
-        $email = sanitize_email($request['email']);
-        $user = get_user_by('email',$email);
-        if (!$user) return new WP_Error('not_found','User not found',['status'=>404]);
+        $email = sanitize_email( $request['email'] );
 
-        $token = bin2hex(random_bytes(32));
-        update_user_meta($user->ID,'reset_hash',hash('sha256',$token));
-        update_user_meta($user->ID,'reset_expiry',time()+3600);
+	$user = get_user_by( 'email', $email );
+	if ( ! $user ) {
+	    return new WP_Error(
+		'not_found',
+		'User not found',
+		[ 'status' => 404 ]
+	    );
+	}
 
-        wp_mail($email,'Reset Password',"Token: $token");
-        return ['success'=>true];
+	$token = wp_generate_uuid4();
+
+	update_user_meta( $user->ID, 'reset_password_token', $token );
+
+	$link = "https://main.d2kswwhxcty0zs.amplifyapp.com/reset-password?token={$token}";
+
+	wp_mail(
+	    $email,
+	    'Confirm Update',
+	    "Click here: {$link}"
+	);
+
+	return [
+	    'success' => true,
+	    'message' => 'Email sent',
+	];
+
     }
 
-    public function update_password(WP_REST_Request $request) {
-        $token = $request['token'];
-        $hash  = hash('sha256',$token);
+    public function update_password( $request ) {
 
-        $users = get_users([
-            'meta_query'=>[
-                ['key'=>'reset_hash','value'=>$hash],
-                ['key'=>'reset_expiry','value'=>time(),'compare'=>'>'],
-            ],
-            'number'=>1
-        ]);
+    $token    = sanitize_text_field( $request['token'] );
+    $password = $request['password'];
 
-        if (!$users) return new WP_Error('invalid','Token expired',['status'=>400]);
+    $users = get_users( [
+        'meta_key'   => 'reset_password_token',
+        'meta_value' => $token,
+        'number'     => 1,
+    ] );
 
-        wp_set_password($request['password'],$users[0]->ID);
-        delete_user_meta($users[0]->ID,'reset_hash');
-        delete_user_meta($users[0]->ID,'reset_expiry');
-
-        return ['success'=>true];
+    if ( empty( $users ) ) {
+        return new WP_Error(
+            'invalid',
+            'Bad token',
+            [ 'status' => 400 ]
+        );
     }
+
+    $user_id = $users[0]->ID;
+
+    wp_set_password( $password, $user_id );
+
+    delete_user_meta( $user_id, 'reset_password_token' );
+
+    return [
+        'success' => true,
+        'message' => 'Password updated!',
+    ];
+}
 
     public function google_auth(WP_REST_Request $request) {
 
@@ -351,19 +393,16 @@ class RESTBridge_Users_API {
             return new WP_Error('missing_email', 'Email is required', ['status' => 400]);
         }
 
-        // 🔹 Track new vs existing user
         $is_new_user = false;
 
-        // 🔹 Check if user exists
+        // 🔹 Find or create user
         $user = get_user_by('email', $email);
 
-        // 🔹 Create user if not exists
         if (!$user) {
             $is_new_user = true;
 
             $username = sanitize_user(current(explode('@', $email)));
 
-            // Ensure unique username
             if (username_exists($username)) {
                 $username .= '_' . wp_generate_password(4, false);
             }
@@ -382,7 +421,6 @@ class RESTBridge_Users_API {
 
             $user = get_user_by('id', $user_id);
 
-            // Save Google avatar (optional)
             if ($avatar) {
                 update_user_meta($user->ID, 'google_avatar', $avatar);
             }
@@ -390,23 +428,22 @@ class RESTBridge_Users_API {
             update_user_meta($user->ID, '_signup_provider', 'google');
         }
 
-        // 🔹 Set WordPress session (important)
+        // 🔹 Set WP session
         wp_set_current_user($user->ID);
         wp_set_auth_cookie($user->ID, true);
 
-        // 🔹 Handle tokens (multi-device safe)
+        // 🔹 Handle tokens
         $tokens = get_user_meta($user->ID, '_api_tokens', true);
-        $tokens = is_array($tokens) ? $tokens : [];
+        $tokens = $this->normalize_tokens($tokens);
 
         // Remove old token for same device
-        $tokens = array_filter($tokens, fn($t) => $t['device'] !== $device);
+        $tokens = array_filter($tokens, fn($t) => ($t['device'] ?? '') !== $device);
 
-        // Generate new token
+        // Generate ONE plain token
         $token = bin2hex(random_bytes(32));
-        $hash  = hash('sha256', $token);
 
         $tokens[] = [
-            'hash'     => $hash,
+            'token'    => $token,
             'device'   => $device,
             'provider' => 'google',
             'created'  => time(),
@@ -414,7 +451,6 @@ class RESTBridge_Users_API {
 
         update_user_meta($user->ID, '_api_tokens', array_values($tokens));
 
-        // 🔹 Response
         return rest_ensure_response([
             'success' => true,
             'token'   => $token,
@@ -430,6 +466,30 @@ class RESTBridge_Users_API {
             ],
         ]);
     }
+    
+    private function normalize_tokens($tokens) {
+        if (!is_array($tokens)) {
+            return [];
+        }
+
+        $flat = [];
+
+        foreach ($tokens as $t) {
+            // Handle nested arrays
+            if (is_array($t) && isset($t[0])) {
+                foreach ($t as $inner) {
+                    if (is_array($inner)) {
+                        $flat[] = $inner;
+                    }
+                }
+            } elseif (is_array($t)) {
+                $flat[] = $t;
+            }
+        }
+
+        return $flat;
+    }
+
 
     public function check_auth_status(WP_REST_Request $request) {
 
