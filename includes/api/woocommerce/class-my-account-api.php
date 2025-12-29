@@ -578,53 +578,61 @@ $item_count = array_sum(array_map(function($i){
 
 
     /* --------------------------------------------------------
-        🔐 Permission Check (Uses your existing method)
+        Permission Check (Uses your existing method)
     ---------------------------------------------------------*/
     public function check_permission($request = null) {
-        // First, respect any existing WP authentication (cookies, basic, bearer via determine_current_user)
+
+        if ($request instanceof WP_REST_Request) {
+            $request->get_json_params();
+        }
+
         $user_id = get_current_user_id();
 
-        // If not authenticated yet, try to parse a Bearer token from the Authorization header
         if (!$user_id && $request) {
+
             $auth_header = $request->get_header('authorization');
-            if ($auth_header) {
-                // Bearer token
-                if (preg_match('/Bearer\s+(\S+)/i', $auth_header, $m)) {
-                    $token = $m[1];
+
+            if (!$auth_header) {
+                $token = $request->get_param('token');
+
+                if ($token) {
                     $users = get_users([
-                        'meta_key' => '_api_token',
+                        'meta_key'   => '_api_token',
                         'meta_value' => $token,
-                        'number' => 1,
-                        'count_total' => false,
+                        'number'     => 1,
+                        'count_total'=> false,
                     ]);
+
                     if (!empty($users)) {
                         wp_set_current_user($users[0]->ID);
                         $user_id = $users[0]->ID;
                     }
                 }
+            }
 
-                // Basic auth fallback (if Bearer not present)
-                if (!$user_id && preg_match('/Basic\s+(.+)$/i', $auth_header, $matches)) {
-                    $credentials = base64_decode($matches[1]);
-                    if (strpos($credentials, ':') !== false) {
-                        list($username, $password) = explode(':', $credentials, 2);
-                        $user = wp_authenticate($username, $password);
-                        if (!is_wp_error($user)) {
-                            wp_set_current_user($user->ID);
-                            $user_id = $user->ID;
-                        }
-                    }
+            if (!$user_id && $auth_header && preg_match('/Bearer\s+(\S+)/i', $auth_header, $m)) {
+                $token = $m[1];
+
+                $users = get_users([
+                    'meta_key'   => '_api_token',
+                    'meta_value' => $token,
+                    'number'     => 1,
+                    'count_total'=> false,
+                ]);
+
+                if (!empty($users)) {
+                    wp_set_current_user($users[0]->ID);
+                    $user_id = $users[0]->ID;
                 }
             }
         }
 
-        // Allow any authenticated user (customers) to access account endpoints
         if ($user_id && $user_id > 0) {
             return true;
         }
 
         return false;
-	}
+    }
 
     public function update_user_account(WP_REST_Request $request) {
 

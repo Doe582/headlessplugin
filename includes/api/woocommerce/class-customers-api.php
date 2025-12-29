@@ -733,30 +733,27 @@ class RESTBridge_Customers_API {
 		];
 	}
 
-	public function check_permission($request = null) {
-		$user_id = get_current_user_id();
+	public function check_permission($request) {
+    $auth = $request->get_header('authorization');
 
-		// 🔁 Basic Auth fallback (optional, keep if you need it)
-		if (!$user_id && $request) {
-			$auth_header = $request->get_header('authorization');
+    if (!$auth || !str_starts_with($auth, 'Bearer ')) {
+        return false;
+    }
 
-			if ($auth_header && preg_match('/Basic\s+(.+)$/i', $auth_header, $matches)) {
-				$credentials = base64_decode($matches[1]);
-				if (strpos($credentials, ':') !== false) {
-					list($username, $password) = explode(':', $credentials, 2);
-					$user = wp_authenticate($username, $password);
+    $token = trim(str_replace('Bearer', '', $auth));
 
-					if (!is_wp_error($user)) {
-						wp_set_current_user($user->ID);
-						$user_id = $user->ID;
-					}
-				}
-			}
-		}
+    try {
+        $jwt = new SimpleJWT(MY_JWT_SECRET);
+        $payload = $jwt->decode($token);
 
-		// ✅ ONLY check authentication here
-		return (bool) $user_id;
-	}
+        wp_set_current_user((int) $payload['user_id']);
+        return true;
+
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
 }
 
 

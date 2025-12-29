@@ -15,14 +15,14 @@ class RESTBridge_Posts_API {
             'permission_callback' => [$this, 'check_permission'],
         ]);
 
-        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/posts/(?P<id>\\d+)', [
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/posts/(?P<identifier>[a-zA-Z0-9-_]+)', [
             'methods' => 'GET',
             'callback' => [$this, 'get_post'],
             'permission_callback' => '__return_true',
         ]);
 
         // New endpoint for detailed single post/blog page
-        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/posts/(?P<id>\\d+)/details', [
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/posts/(?P<identifier>[a-zA-Z0-9-_]+)/details', [
             'methods' => 'GET',
             'callback' => [$this, 'get_post_details'],
             'permission_callback' => '__return_true',
@@ -109,73 +109,104 @@ class RESTBridge_Posts_API {
         ]);
     }
 
-    public function get_post(WP_REST_Request $request) {
-        $post_id = (int) $request['id'];
-        $post = get_post($post_id);
+    public function get_post( WP_REST_Request $request ) {
+        $identifier = $request['identifier'];
 
-        if (!$post || $post->post_type !== 'post') {
-            return new WP_Error('post_not_found', 'Post not found', ['status' => 404]);
+        if ( is_numeric( $identifier ) ) {
+            $post = get_post( (int) $identifier );
+        } else {
+            $post = get_page_by_path( sanitize_title( $identifier ), OBJECT, 'post' );
         }
 
-        return rest_ensure_response($this->format_post($post));
+        if ( ! $post || $post->post_type !== 'post' ) {
+            return new WP_Error(
+                'post_not_found',
+                'Post not found',
+                [ 'status' => 404 ]
+            );
+        }
+
+        return rest_ensure_response( $this->format_post( $post ) );
     }
+
 
     /**
      * Get detailed post information with comments, related posts, and author info
      */
-    public function get_post_details(WP_REST_Request $request) {
-        $post_id = (int) $request['id'];
-        $post = get_post($post_id);
+    public function get_post_details( WP_REST_Request $request ) {
 
-        if (!$post || $post->post_type !== 'post') {
-            return new WP_Error('post_not_found', 'Post not found', ['status' => 404]);
+        $identifier = $request['identifier'];
+
+        // Resolve post by ID or slug
+        if ( is_numeric( $identifier ) ) {
+            $post = get_post( (int) $identifier );
+        } else {
+            $post = get_page_by_path(
+                sanitize_title( $identifier ),
+                OBJECT,
+                'post'
+            );
         }
 
-        $params = $request->get_query_params();
-        $include_comments = isset($params['include_comments']) ? $params['include_comments'] !== 'false' : true;
-        $include_related = isset($params['include_related']) ? $params['include_related'] !== 'false' : true;
-        $include_author = isset($params['include_author']) ? $params['include_author'] !== 'false' : true;
-        $related_count = isset($params['related_count']) ? (int) $params['related_count'] : 3;
+        if ( ! $post || $post->post_type !== 'post' ) {
+            return new WP_Error(
+                'post_not_found',
+                'Post not found',
+                [ 'status' => 404 ]
+            );
+        }
 
-        // Base post data
+        $post_id = $post->ID;
+
+        // Query params (REST already casts booleans, but this is safe)
+        $params = $request->get_query_params();
+
+        $include_comments = filter_var( $params['include_comments'] ?? true, FILTER_VALIDATE_BOOLEAN );
+        $include_related  = filter_var( $params['include_related'] ?? true, FILTER_VALIDATE_BOOLEAN );
+        $include_author   = filter_var( $params['include_author'] ?? true, FILTER_VALIDATE_BOOLEAN );
+
+        $related_count        = (int) ( $params['related_count'] ?? 3 );
+        $popular_tags_count   = (int) ( $params['popular_tags_count'] ?? 10 );
+        $popular_posts_count  = (int) ( $params['popular_posts_count'] ?? 5 );
+
+        // Base response
         $response = [
-            'post' => $this->format_post($post),
+            'post' => $this->format_post( $post ),
             'metadata' => [
-                'reading_time' => $this->calculate_reading_time($post->post_content),
-                'word_count' => str_word_count(strip_tags($post->post_content)),
-                'comment_count' => (int) $post->comment_count,
+                'reading_time' => $this->calculate_reading_time( $post->post_content ),
+                'word_count'   => str_word_count( wp_strip_all_tags( $post->post_content ) ),
+                'comment_count'=> (int) $post->comment_count,
             ],
         ];
 
-        // Include author details
-        if ($include_author) {
-            $response['author'] = $this->get_author_details($post->post_author);
+        if ( $include_author ) {
+            $response['author'] = $this->get_author_details( $post->post_author );
         }
 
-        // Include comments
-        if ($include_comments) {
-            $response['comments'] = $this->get_post_comments($post_id);
+        if ( $include_comments ) {
+            $response['comments'] = $this->get_post_comments( $post_id );
         }
 
-        // Include related posts
-        if ($include_related) {
-            $response['related_posts'] = $this->get_related_posts($post_id, $related_count);
+        if ( $include_related ) {
+            $response['related_posts'] = $this->get_related_posts( $post_id, $related_count );
         }
 
-        // Include popular tags and popular posts
-        $popular_tags_count = isset($params['popular_tags_count']) ? (int) $params['popular_tags_count'] : 10;
-        $popular_posts_count = isset($params['popular_posts_count']) ? (int) $params['popular_posts_count'] : 5;
-        $response['popular_tags'] = $this->get_popular_tags($popular_tags_count);
-        $response['popular_posts'] = $this->get_popular_posts($popular_posts_count);
+        $response['popular_tags']  = $this->get_popular_tags( $popular_tags_count );
+        $response['popular_posts'] = $this->get_popular_posts( $popular_posts_count );
 
-        // Include offer data (if present as post meta)
-        $response['offer'] = $this->get_post_offer($post_id);
+        $response['offer'] = $this->get_post_offer( $post_id );
 
-        // Apply filters to allow customization
-        $response = apply_filters('restbridge_post_details', $response, $post_id);
+        // Extension hook
+        $response = apply_filters(
+            'restbridge_post_details',
+            $response,
+            $post_id,
+            $post
+        );
 
-        return rest_ensure_response($response);
+        return rest_ensure_response( $response );
     }
+
 
     public function create_post(WP_REST_Request $request) {
         $params = $request->get_json_params();

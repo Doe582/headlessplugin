@@ -309,8 +309,10 @@ class RESTBridge_Store_API_Product_Detail {
             return $response;
         }
 
-        // Normalize price data for collection responses first (no product ID in route)
-        if (!preg_match('#/wc/store/v1/products/(\d+)#', $route, $matches)) {
+        // Match both numeric IDs and slugs in the route
+        // Pattern matches: /wc/store/v1/products/{id_or_slug}
+        if (!preg_match('#/wc/store/v1/products/([a-zA-Z0-9\-_]+)$#', $route, $matches)) {
+            // This is a collection request (no specific product identifier)
             $collection_data = $this->maybe_normalize_products_collection_response($response);
             if ($collection_data !== null) {
                 $response->set_data($collection_data);
@@ -318,13 +320,25 @@ class RESTBridge_Store_API_Product_Detail {
             return $response;
         }
 
-        $product_id = (int) $matches[1];
+        $product_identifier = $matches[1];
         
         if (!function_exists('wc_get_product')) {
             return $response;
         }
         
-        $product = wc_get_product($product_id);
+        // Check if identifier is numeric (product ID) or a slug
+        if (is_numeric($product_identifier)) {
+            $product_id = (int) $product_identifier;
+            $product = wc_get_product($product_id);
+        } else {
+            // It's a slug - look up product by slug
+            $product = $this->get_product_by_slug($product_identifier);
+            if ($product) {
+                $product_id = $product->get_id();
+            } else {
+                return $response;
+            }
+        }
 
         if (!$product) {
             return $response;
@@ -637,6 +651,31 @@ class RESTBridge_Store_API_Product_Detail {
 
         // Check if it's a Store API product route (list or single)
         return strpos($route, '/wc/store/v1/products') !== false;
+    }
+
+    /**
+     * Get product by slug
+     * 
+     * @param string $slug Product slug
+     * @return WC_Product|null
+     */
+    private function get_product_by_slug($slug) {
+        $args = [
+            'post_type' => 'product',
+            'name' => $slug,
+            'posts_per_page' => 1,
+            'post_status' => 'publish',
+            'fields' => 'ids',
+        ];
+        
+        $query = new WP_Query($args);
+        
+        if ($query->have_posts()) {
+            $product_id = $query->posts[0];
+            return wc_get_product($product_id);
+        }
+        
+        return null;
     }
 
     /**
@@ -2460,3 +2499,78 @@ class RESTBridge_Store_API_Product_Detail {
     }
 }
 
+
+/**
+ * Plugin Name: WC Store API Custom Product Meta
+ * Description: Adds custom meta to WooCommerce Store API product responses
+ */
+
+add_action( 'woocommerce_blocks_loaded', function () {
+
+    // Ensure Store API helpers exist
+    if ( ! function_exists( 'woocommerce_store_api_register_endpoint_data' ) ) {
+        return;
+    }
+
+    // Ensure ProductSchema exists
+    if ( ! class_exists( '\Automattic\WooCommerce\StoreApi\Schemas\V1\ProductSchema' ) ) {
+        return;
+    }
+
+    woocommerce_store_api_register_endpoint_data( [
+        'endpoint'        => \Automattic\WooCommerce\StoreApi\Schemas\V1\ProductSchema::IDENTIFIER,
+        'namespace'       => 'wc_store_custom_meta',
+        'data_callback'   => 'wc_store_custom_product_meta_data',
+        'schema_callback' => 'wc_store_custom_product_meta_schema',
+    ] );
+
+} );
+
+function wc_store_custom_product_meta_data( $product ) {
+
+    return [
+        'shipping_details' => get_theme_mod( 'styluza_product_shipping_details', '' ),
+        'return_refund'    => get_theme_mod( 'styluza_product_return_refund', '' ),
+    ];
+}
+
+
+function wc_store_custom_product_meta_schema() {
+
+    return [
+        'properties' => [
+            'shipping_details' => [
+                'description' => __( 'Shipping Details', 'wc-store-custom-meta' ),
+                'type'        => 'string',
+                'readonly'    => true,
+                'context'     => [ 'view' ],
+            ],
+            'return_refund' => [
+                'description' => __( 'Return & Refund Policy', 'wc-store-custom-meta' ),
+                'type'        => 'string',
+                'readonly'    => true,
+                'context'     => [ 'view' ],
+            ],
+        ],
+    ];
+}
+
+
+add_action('rest_api_init', function () {
+
+    // Handle OPTIONS preflight
+    if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+        header('Access-Control-Allow-Origin: http://localhost:3000');
+        header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+        header('Access-Control-Allow-Headers: Content-Type, Cart-Token');
+        header('Access-Control-Allow-Credentials: true');
+        status_header(200);
+        exit;
+    }
+});
+
+add_filter('rest_pre_serve_request', function ($value) {
+    header('Access-Control-Allow-Origin: http://localhost:3000');
+    header('Access-Control-Allow-Credentials: true');
+    return $value;
+});

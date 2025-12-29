@@ -76,6 +76,8 @@ class RESTBridge_Users_API {
             'permission_callback' => '__return_true',
         ]);
 
+        
+
     }
 
     private function extract_bearer_token(WP_REST_Request $request) {
@@ -351,34 +353,34 @@ class RESTBridge_Users_API {
 
     public function update_password( $request ) {
 
-    $token    = sanitize_text_field( $request['token'] );
-    $password = $request['password'];
+        $token    = sanitize_text_field( $request['token'] );
+        $password = $request['password'];
 
-    $users = get_users( [
-        'meta_key'   => 'reset_password_token',
-        'meta_value' => $token,
-        'number'     => 1,
-    ] );
+        $users = get_users( [
+            'meta_key'   => 'reset_password_token',
+            'meta_value' => $token,
+            'number'     => 1,
+        ] );
 
-    if ( empty( $users ) ) {
-        return new WP_Error(
-            'invalid',
-            'Bad token',
-            [ 'status' => 400 ]
-        );
+        if ( empty( $users ) ) {
+            return new WP_Error(
+                'invalid',
+                'Bad token',
+                [ 'status' => 400 ]
+            );
+        }
+
+        $user_id = $users[0]->ID;
+
+        wp_set_password( $password, $user_id );
+
+        delete_user_meta( $user_id, 'reset_password_token' );
+
+        return [
+            'success' => true,
+            'message' => 'Password updated!',
+        ];
     }
-
-    $user_id = $users[0]->ID;
-
-    wp_set_password( $password, $user_id );
-
-    delete_user_meta( $user_id, 'reset_password_token' );
-
-    return [
-        'success' => true,
-        'message' => 'Password updated!',
-    ];
-}
 
     public function google_auth(WP_REST_Request $request) {
 
@@ -525,10 +527,17 @@ class RESTBridge_Users_API {
         ]);
     }
 
+    // 2. FULL generate_user_token function
     public function generate_user_token(WP_REST_Request $request) {
         $params = $request->get_json_params();
-        $username = isset($params['username']) ? sanitize_text_field($params['username']) : sanitize_text_field($request->get_param('username'));
-        $password = isset($params['password']) ? $params['password'] : $request->get_param('password');
+        
+        $username = isset($params['username']) 
+            ? sanitize_text_field($params['username'])
+            : sanitize_text_field($request->get_param('username'));
+            
+        $password = isset($params['password']) 
+            ? $params['password']
+            : $request->get_param('password');
 
         if (empty($username) || empty($password)) {
             return new WP_Error('missing_credentials', 'Username and password are required', ['status' => 400]);
@@ -544,22 +553,21 @@ class RESTBridge_Users_API {
             return new WP_Error('invalid_credentials', 'Invalid username or password', ['status' => 401]);
         }
 
-        try {
-            $token = bin2hex(random_bytes(32));
-        } catch (Exception $e) {
-            return new WP_Error('token_generation_failed', 'Unable to generate token', ['status' => 500]);
-        }
-
-        // tokens
-        $tokens = get_user_meta($user->ID, '_api_tokens', true);
-        $tokens = is_array($tokens) ? $tokens : [];
-
-        $tokens[] = [
-            'token'  => $token,
-            'device' => 'api',
+        // Create REAL JWT
+        $jwt = new SimpleJWT(defined('MY_JWT_SECRET') ? MY_JWT_SECRET : 'fallback-secret');// SAME KEY EVERYWHERE
+        
+        $payload = [
+            'user_id' => $user->ID,
+            'user_login' => $user->user_login,
+            'user_email' => $user->user_email,
+            'exp' => time() + (24 * 3600), // 24 hours
+            'iat' => time()
         ];
-
-        update_user_meta($user->ID, '_api_tokens', array_values($tokens));
+        
+        $token = $jwt->encode($payload);
+        
+        // Store in usermeta (backup)
+        update_user_meta($user->ID, '_api_token', $token);
 
         return rest_ensure_response([
             'token_type' => 'Bearer',
@@ -567,9 +575,66 @@ class RESTBridge_Users_API {
             'user_id' => $user->ID,
             'user_login' => $user->user_login,
             'user_email' => $user->user_email,
-            'issued_at' => gmdate('c'),
+            'expires_in' => 86400, // 24 hours
+            'issued_at' => gmdate('c')
         ]);
     }
 
-
 }
+
+
+/**
+ * Plugin Name: React WordPress Login API
+ */
+
+add_action('rest_api_init', function () {
+
+    register_rest_route('react-auth/v1', '/login', [
+        'methods'  => 'POST',
+        'callback' => 'react_wp_login',
+        'permission_callback' => '__return_true',
+    ]);
+
+});
+
+function react_wp_login( WP_REST_Request $request ) {
+
+    $username = sanitize_text_field($request->get_param('username'));
+    $password = $request->get_param('password');
+
+    if ( empty($username) || empty($password) ) {
+        return new WP_Error('missing', 'Username or password missing', ['status' => 400]);
+    }
+
+    $creds = [
+        'user_login'    => $username,
+        'user_password' => $password,
+        'remember'      => true,
+    ];
+
+    $user = wp_signon($creds, false);
+
+    if ( is_wp_error($user) ) {
+        return new WP_Error('login_failed', 'Invalid login', ['status' => 401]);
+    }
+
+   
+
+    // 🔑 ENSURE AUTH COOKIES ARE SET
+    wp_set_current_user($user->ID);
+    wp_set_auth_cookie($user->ID, true);
+
+     //  THIS WAS MISSING
+    if (function_exists('WC')) {
+        WC()->initialize_session();
+        WC()->session->set_customer_session_cookie(true);
+        WC()->customer = new WC_Customer($user->ID);
+    }
+    return [
+        'success' => true,
+        'user_id' => $user->ID,
+        'message' => 'Logged in to WordPress',
+    ];
+}
+
+
