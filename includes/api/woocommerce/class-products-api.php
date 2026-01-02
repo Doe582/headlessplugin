@@ -33,6 +33,13 @@ class RESTBridge_Products_API {
             'permission_callback' => [$this, 'check_permission'],
         ]);
 
+        register_rest_route(RESTBRIDGE_API_NAMESPACE, '/products/(?P<id>\d+)/review', [
+            'methods'  => 'POST',
+            'callback' => [$this, 'add_product_review'],
+            'permission_callback' => [$this, 'check_permission'],
+        ]);
+
+
         register_rest_route(RESTBRIDGE_API_NAMESPACE, '/products/(?P<id>\d+)', [
             'methods' => 'DELETE',
             'callback' => [$this, 'delete_product'],
@@ -50,7 +57,7 @@ class RESTBridge_Products_API {
                     'description' => 'Comma separated product IDs',
                 ],
             ],
-        ]);
+        ]); 
     }
     /**
      * Compare products by IDs
@@ -136,6 +143,59 @@ class RESTBridge_Products_API {
             ];
         }, $terms);
     }
+
+    public function add_product_review(WP_REST_Request $request) {
+
+    $product_id = absint($request['id']);
+    $rating     = intval($request->get_param('rating'));
+    $review     = sanitize_textarea_field($request->get_param('review'));
+
+    // Validate product
+    if (!wc_get_product($product_id)) {
+        return new WP_Error('invalid_product', 'Invalid product ID', ['status' => 404]);
+    }
+
+    // Validate rating
+    if ($rating < 1 || $rating > 5) {
+        return new WP_Error('invalid_rating', 'Rating must be between 1 and 5', ['status' => 400]);
+    }
+
+    $user_id = get_current_user_id();
+
+    if (!$user_id) {
+        return new WP_Error('not_logged_in', 'User must be logged in to add a review', ['status' => 401]);
+    }
+
+    // Prepare comment data
+    $comment_data = [
+        'comment_post_ID'      => $product_id,
+        'comment_author'       => wp_get_current_user()->display_name,
+        'comment_author_email' => wp_get_current_user()->user_email,
+        'comment_content'      => $review,
+        'comment_type'         => 'review',
+        'comment_approved'     => 1,
+        'user_id'              => $user_id,
+    ];
+
+    // Insert comment
+    $comment_id = wp_insert_comment($comment_data);
+
+    if (!$comment_id) {
+        return new WP_Error('review_failed', 'Failed to add review', ['status' => 500]);
+    }
+
+    // Add rating meta
+    update_comment_meta($comment_id, 'rating', $rating);
+
+    return [
+        'success'    => true,
+        'message'    => 'Review added successfully',
+        'review_id'  => $comment_id,
+        'product_id' => $product_id,
+        'rating'     => $rating,
+    ];
+}
+
 
     public function get_products(WP_REST_Request $request) {
         if (!function_exists('WC')) {
@@ -334,26 +394,58 @@ class RESTBridge_Products_API {
         ];
     }
 
-    public function check_permission($request = null) {
+   public function check_permission($request = null) {
+
+        if ($request instanceof WP_REST_Request) {
+            $request->get_json_params();
+        }
+
         $user_id = get_current_user_id();
-        
-        // Fallback: Try Basic Auth if not authenticated
+
         if (!$user_id && $request) {
+
             $auth_header = $request->get_header('authorization');
-            if ($auth_header && preg_match('/Basic\s+(.+)$/i', $auth_header, $matches)) {
-                $credentials = base64_decode($matches[1]);
-                if (strpos($credentials, ':') !== false) {
-                    list($username, $password) = explode(':', $credentials, 2);
-                    $user = wp_authenticate($username, $password);
-                    if (!is_wp_error($user)) {
-                        wp_set_current_user($user->ID);
-                        $user_id = $user->ID;
+
+            if (!$auth_header) {
+                $token = $request->get_param('token');
+
+                if ($token) {
+                    $users = get_users([
+                        'meta_key'   => '_api_token',
+                        'meta_value' => $token,
+                        'number'     => 1,
+                        'count_total'=> false,
+                    ]);
+
+                    if (!empty($users)) {
+                        wp_set_current_user($users[0]->ID);
+                        $user_id = $users[0]->ID;
                     }
                 }
             }
+
+            if (!$user_id && $auth_header && preg_match('/Bearer\s+(\S+)/i', $auth_header, $m)) {
+                $token = $m[1];
+
+                $users = get_users([
+                    'meta_key'   => '_api_token',
+                    'meta_value' => $token,
+                    'number'     => 1,
+                    'count_total'=> false,
+                ]);
+
+                if (!empty($users)) {
+                    wp_set_current_user($users[0]->ID);
+                    $user_id = $users[0]->ID;
+                }
+            }
         }
-        
-        return $user_id && (current_user_can('manage_woocommerce') || current_user_can('manage_options') || in_array('administrator', (array)wp_get_current_user()->roles));
+
+        if ($user_id && $user_id > 0) {
+            return true;
+        }
+
+        return false;
     }
 }
 

@@ -46,115 +46,121 @@ class RESTBridge_Pages_Content_API {
     
     }
 
-        function restbridge_get_page_faqs(WP_REST_Request $request) {
+     function restbridge_get_page_faqs(WP_REST_Request $request) {
 
-    $page_id = (int) $request->get_param('page_id');
+        $page_id = (int) $request->get_param('page_id');
 
-    if (!$page_id || get_post_status($page_id) !== 'publish') {
-        return new WP_Error('invalid_page', 'Invalid or unpublished page.', ['status' => 404]);
-    }
-
-    $post = get_post($page_id);
-    if (!$post) {
-        return new WP_Error('page_not_found', 'Page not found.', ['status' => 404]);
-    }
-
-    $content = apply_filters('the_content', $post->post_content);
-
-    libxml_use_internal_errors(true);
-    $dom = new DOMDocument();
-    $dom->loadHTML('<?xml encoding="utf-8" ?>' . $content);
-
-    $xpath = new DOMXPath($dom);
-
-    /* STEP 1: EXTRACT FAQs (h3 only) */
-    $faqs = [];
-
-    $h3s = $xpath->query('//h3');
-
-    foreach ($h3s as $heading) {
-
-        $answerText = '';
-        $toRemove   = [$heading];
-
-        $next = $heading->nextSibling;
-
-        while ($next) {
-
-            if ($next->nodeName === 'h3') {
-                break;
-            }
-
-            if (in_array($next->nodeName, ['p', 'div'])) {
-                $answerText .= ' ' . trim($next->textContent);
-                $toRemove[] = $next;
-            }
-
-            $next = $next->nextSibling;
+        if (!$page_id || get_post_status($page_id) !== 'publish') {
+            return new WP_Error('invalid_page', 'Invalid or unpublished page.', ['status' => 404]);
         }
 
-        if (trim($answerText) !== '') {
-            $faqs[] = [
-                'question' => trim($heading->textContent),
-                'answer'   => trim(preg_replace('/\s+/', ' ', $answerText))
+        $post = get_post($page_id);
+        if (!$post) {
+            return new WP_Error('page_not_found', 'Page not found.', ['status' => 404]);
+        }
+
+        $content = apply_filters('the_content', $post->post_content);
+
+        libxml_use_internal_errors(true);
+        $dom = new DOMDocument();
+        $dom->loadHTML('<?xml encoding="utf-8" ?>' . $content);
+        $xpath = new DOMXPath($dom);
+
+        $faq_groups = [];
+
+        $accordionNodes = $xpath->query(
+            '//div[contains(@class,"accordion-group")]'
+        );
+
+        foreach ($accordionNodes as $accordion) {
+
+            $classAttr = $accordion->getAttribute('class');
+            $allClasses = preg_split('/\s+/', trim($classAttr));
+
+            $customClasses = array_filter($allClasses, function ($class) {
+                return $class !== '' &&
+                    !str_starts_with($class, 'wp-block') &&
+                    !str_starts_with($class, 'is-layout') &&
+                    !str_contains($class, 'accordion-content') &&
+                    !str_contains($class, 'accordion__');
+            });
+
+            if (empty($customClasses)) {
+                continue;
+            }
+
+            $h3s = $xpath->query('.//h3', $accordion);
+
+            foreach ($customClasses as $customClass) {
+
+                if (!isset($faq_groups[$customClass])) {
+                    $faq_groups[$customClass] = [];
+                }
+
+                foreach ($h3s as $heading) {
+
+                    $answerText = '';
+                    $next = $heading->nextSibling;
+
+                    while ($next) {
+
+                        if ($next->nodeName === 'h3') {
+                            break;
+                        }
+
+                        if (in_array($next->nodeName, ['p', 'div'])) {
+                            $answerText .= ' ' . trim($next->textContent);
+                        }
+
+                        $next = $next->nextSibling;
+                    }
+
+                    if (trim($answerText) !== '') {
+                        $faq_groups[$customClass][] = [
+                            'question' => trim($heading->textContent),
+                            'answer'   => trim(preg_replace('/\s+/', ' ', $answerText)),
+                        ];
+                    }
+                }
+            }
+        }
+
+        $content_blocks = [];
+        $h2s = $xpath->query('//h2');
+
+        foreach ($h2s as $h2) {
+
+            $descParts = [];
+            $next = $h2->nextSibling;
+
+            while ($next) {
+
+                if ($next->nodeName === 'h2') {
+                    break;
+                }
+
+                if ($next->nodeName === 'p') {
+                    $text = trim($next->textContent);
+                    if ($text !== '') {
+                        $descParts[] = $text;
+                    }
+                }
+
+                $next = $next->nextSibling;
+            }
+
+            $content_blocks[] = [
+                'title'       => trim($h2->textContent),
+                'description' => trim(implode(' ', $descParts)),
             ];
-
-            // Remove FAQ question & answers from DOM
-            foreach ($toRemove as $node) {
-                if ($node->parentNode) {
-                    $node->parentNode->removeChild($node);
-                }
-            }
         }
-    }
-
-    /*  STEP 2: GET PAGE CONTENT AS STRUCTURED h2 + p */
-    $content_blocks = [];
-
-    $h2s = $xpath->query('//h2');
-
-    foreach ($h2s as $h2) {
-
-        $section = [
-            'title'       => trim($h2->textContent),
-            'description' => ''
-        ];
-
-        $descParts = [];
-        $next = $h2->nextSibling;
-
-        while ($next) {
-
-            // Stop at next section
-            if ($next->nodeName === 'h2') {
-                break;
-            }
-
-            // Collect paragraph text only
-            if ($next->nodeName === 'p') {
-                $text = trim($next->textContent);
-                if ($text !== '') {
-                    $descParts[] = $text;
-                }
-            }
-
-            $next = $next->nextSibling;
-        }
-
-        $section['description'] = trim(implode(' ', $descParts));
-        $content_blocks[] = $section;
-    }
-
-
 
         return rest_ensure_response([
-            'page_id' => $page_id,
-            'content' => $content_blocks, // FAQ text removed
-            'count'   => count($faqs),
-            'faqs'    => $faqs,
+            'page_id'    => $page_id,
+            'content'    => $content_blocks,
+            'faq_groups' => $faq_groups,
         ]);
     }
-    
 
 
     /**

@@ -194,7 +194,7 @@ class RESTBridge_Posts_API {
         $response['popular_tags']  = $this->get_popular_tags( $popular_tags_count );
         $response['popular_posts'] = $this->get_popular_posts( $popular_posts_count );
 
-        $response['offer'] = $this->get_post_offer( $post_id );
+        $response['post_offer'] = $this->get_post_offer( $post_id );
 
         // Extension hook
         $response = apply_filters(
@@ -498,31 +498,33 @@ class RESTBridge_Posts_API {
      * - offer_link
      * Returns null when no offer is configured.
      */
-    private function get_post_offer($post_id) {
-        // Get the first offer term
-        $terms = get_terms([
-            'taxonomy' => 'offer',
-            'hide_empty' => false,
-            'number' => 1
-        ]);
-        if (empty($terms) || is_wp_error($terms)) {
+   private function get_post_offer( int $post_id ) {
+
+        // Safety: only for blog posts
+        if ( get_post_type( $post_id ) !== 'post' ) {
             return null;
         }
-        $offer = $terms[0];
-        $img      = get_term_meta($offer->term_id, 'offer_image', true);
-        $heading  = get_term_meta($offer->term_id, 'offer_heading', true);
-        $bigtext  = get_term_meta($offer->term_id, 'offer_big_text', true);
-        $btn_text = get_term_meta($offer->term_id, 'offer_btn_text', true);
-        $btn_url  = get_term_meta($offer->term_id, 'offer_btn_url', true);
+
+        // Blog Offer disabled in Customizer
+        if ( ! get_theme_mod( 'styluza_blog_offer_show', false ) ) {
+            return null;
+        }
+
+        $title      = get_theme_mod( 'styluza_blog_offer_title', '' );
+        $percentage = (int) get_theme_mod( 'styluza_blog_offer_percentage', 0 );
+        $image      = get_theme_mod( 'styluza_blog_offer_image' );
+
+        // Nothing meaningful to show
+        if ( empty( $title ) && $percentage <= 0 ) {
+            return null;
+        }
 
         return [
-            'image' => $img ?: null,
-            'heading' => $heading ?: null,
-            'big_text' => $bigtext ?: null,
-            'button_text' => $btn_text ?: null,
-            'button_url' => $btn_url ?: null,
-            'term_id' => $offer->term_id,
-            'term_name' => $offer->name,
+            'type'       => 'blog',
+            'enabled'    => true,
+            'title'      => $title,
+            'percentage' => $percentage,
+            'image'      => $image,
         ];
     }
 

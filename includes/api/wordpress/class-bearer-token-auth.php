@@ -64,37 +64,3 @@ class RESTBridge_Bearer_Token_Auth {
 
 new RESTBridge_Bearer_Token_Auth();
 
-
-
-// Add this to functions.php - Pure PHP JWT (no external files)
-class SimpleJWT {
-    private $key;
-    
-    public function __construct($key = 'your-super-secret-key-change-this') {
-        $this->key = $key;
-    }
-    
-    public function encode($payload) {
-        $header = json_encode(['typ' => 'JWT', 'alg' => 'HS256']);
-        $payload = json_encode($payload);
-        
-        $base64UrlHeader = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode($header));
-        $base64UrlPayload = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode($payload));
-        
-        $signature = hash_hmac('sha256', $base64UrlHeader . "." . $base64UrlPayload, $this->key, true);
-        $base64UrlSignature = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode($signature));
-        
-        return $base64UrlHeader . "." . $base64UrlPayload . "." . $base64UrlSignature;
-    }
-    
-    public function decode($token) {
-        list($header, $payload, $signature) = explode('.', $token);
-        $expected = hash_hmac('sha256', $header . "." . $payload, $this->key, true);
-        $actual = base64_decode(strtr($signature, '-_', '+/') . str_repeat('=', (4 - strlen($signature) % 4)));
-        
-        if (!hash_equals($expected, $actual)) return false;
-        
-        $payload = json_decode(base64_decode(strtr($payload, '-_', '+/') . str_repeat('=', (4 - strlen($payload) % 4))), true);
-        return $payload;
-    }
-}

@@ -125,10 +125,26 @@ class RESTBridge_Account_API {
 
         $customer->save();
 
+        if (!empty($data['address_type'])) {
+
+            $address_type = sanitize_text_field($data['address_type']);
+
+            if ($user_id) {
+                update_user_meta($user_id, '_styluza_address_type', $address_type);
+                WC()->session->set('styluza_address_type', $address_type);
+            } else {
+                WC()->session->set('styluza_address_type', $address_type);
+            }
+        }
+
         return [
             'message' => 'Address updated successfully.',
             'billing' => $customer->get_billing(),
-            'shipping' => $customer->get_shipping()
+            'shipping' => $customer->get_shipping(),
+            'address_type' => $user_id
+            ? get_user_meta($user_id, '_address_type', true)
+            : WC()->session->get('address_type'),
+        'user_type' => $user_id ? 'logged_in' : 'guest'
         ];
     }
 
@@ -582,56 +598,7 @@ $item_count = array_sum(array_map(function($i){
     ---------------------------------------------------------*/
     public function check_permission($request = null) {
 
-        if ($request instanceof WP_REST_Request) {
-            $request->get_json_params();
-        }
-
-        $user_id = get_current_user_id();
-
-        if (!$user_id && $request) {
-
-            $auth_header = $request->get_header('authorization');
-
-            if (!$auth_header) {
-                $token = $request->get_param('token');
-
-                if ($token) {
-                    $users = get_users([
-                        'meta_key'   => '_api_token',
-                        'meta_value' => $token,
-                        'number'     => 1,
-                        'count_total'=> false,
-                    ]);
-
-                    if (!empty($users)) {
-                        wp_set_current_user($users[0]->ID);
-                        $user_id = $users[0]->ID;
-                    }
-                }
-            }
-
-            if (!$user_id && $auth_header && preg_match('/Bearer\s+(\S+)/i', $auth_header, $m)) {
-                $token = $m[1];
-
-                $users = get_users([
-                    'meta_key'   => '_api_token',
-                    'meta_value' => $token,
-                    'number'     => 1,
-                    'count_total'=> false,
-                ]);
-
-                if (!empty($users)) {
-                    wp_set_current_user($users[0]->ID);
-                    $user_id = $users[0]->ID;
-                }
-            }
-        }
-
-        if ($user_id && $user_id > 0) {
-            return true;
-        }
-
-        return false;
+        return is_user_logged_in();
     }
 
     public function update_user_account(WP_REST_Request $request) {

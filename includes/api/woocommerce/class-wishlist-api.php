@@ -232,34 +232,46 @@ class RESTBridge_Wishlist_API {
         return true;
     }
 
-    private function extract_bearer_token(WP_REST_Request $request) {
-        $authorization = $request->get_header('authorization');
-        if (!empty($authorization)) {
-            if (stripos($authorization, 'bearer ') === 0) {
-                return trim(substr($authorization, 7));
+   private function extract_bearer_token(WP_REST_Request $request) {
+
+        // 1. WordPress REST API (preferred)
+        $auth = $request->get_header('authorization');
+
+        // 2. Standard PHP server var
+        if (!$auth && isset($_SERVER['HTTP_AUTHORIZATION'])) {
+            $auth = $_SERVER['HTTP_AUTHORIZATION'];
+        }
+
+        // 3. FastCGI / Nginx
+        if (!$auth && isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+            $auth = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+        }
+
+        // 4. Apache fallback
+        if (!$auth && function_exists('apache_request_headers')) {
+            $headers = apache_request_headers();
+            if (isset($headers['Authorization'])) {
+                $auth = $headers['Authorization'];
             }
-
-            if (stripos($authorization, 'basic ') === 0) {
-                $decoded = base64_decode(substr($authorization, 6));
-                if ($decoded !== false && strpos($decoded, ':') !== false) {
-                    list(, $token) = explode(':', $decoded, 2);
-                    return $token;
-                }
-            }
         }
 
-        $header_token = $request->get_header('x-bearer-token');
-        if (!empty($header_token)) {
-            return $header_token;
+        // 5. Custom header fallback (frontend safety)
+        if (!$auth && isset($_SERVER['HTTP_X_BEARER_TOKEN'])) {
+            return sanitize_text_field($_SERVER['HTTP_X_BEARER_TOKEN']);
         }
 
-        $param_token = $request->get_param('bearer_token');
-        if (!empty($param_token)) {
-            return sanitize_text_field($param_token);
+        // 6. Extract Bearer
+        if ($auth && preg_match('/Bearer\s+(.+)/i', $auth, $matches)) {
+            return trim($matches[1]);
         }
 
-        $legacy = $request->get_param('user_token');
-        return !empty($legacy) ? sanitize_text_field($legacy) : '';
+        // 7. Query param fallback (last resort)
+        $param = $request->get_param('token');
+        if (!empty($param)) {
+            return sanitize_text_field($param);
+        }
+
+        return '';
     }
 
     private function get_user_by_api_token($token) {

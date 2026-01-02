@@ -16,6 +16,8 @@ class RESTBridge_Plugin {
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-tags-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-users-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-bearer-token-auth.php';
+        require_once plugin_dir_path(__FILE__) . '../auth/class-api-auth.php';
+        require_once plugin_dir_path(__FILE__) . '../auth/class-simple-jwt.php';
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-media-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-taxonomies-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/wordpress/class-menus-api.php';
@@ -34,6 +36,7 @@ class RESTBridge_Plugin {
         
         // WooCommerce API
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-products-api.php';
+        require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-checkout-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-cart-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-coupons-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-customers-api.php';
@@ -52,6 +55,7 @@ class RESTBridge_Plugin {
         
         // Content & WooCommerce Managers
         require_once plugin_dir_path(__FILE__) . '../content/class-post-manager.php';
+        require_once plugin_dir_path(__FILE__) . '../woocommerce/class-cart.php';
         require_once plugin_dir_path(__FILE__) . '../woocommerce/class-woocommerce-manager.php';
         require_once plugin_dir_path(__FILE__) . '../woocommerce/class-woocommerce-settings.php';
         require_once plugin_dir_path(__FILE__) . '../woocommerce/class-woocommerce-product-sorting.php';
@@ -65,6 +69,7 @@ class RESTBridge_Plugin {
     private function define_hooks() {
         add_action('rest_api_init', [$this, 'register_api_routes']);
         add_action('rest_api_init', [$this, 'bootstrap_wc_for_rest']);
+        add_filter('rest_authentication_errors', [$this, 'handle_authentication']);
         add_action('admin_menu', [$this, 'add_plugin_menu']);
         add_action('init', [$this, 'init_content_manager']);
         add_action('init', [$this, 'init_woocommerce_manager']);
@@ -143,6 +148,9 @@ class RESTBridge_Plugin {
         if (class_exists('WooCommerce')) {
             $products_api = new RESTBridge_Products_API();
             $products_api->register_routes();
+
+            $checkout_api = new RESTBridge_Shipping_Address_API();
+            $checkout_api->register_routes();
 
             $cart_api = new RESTBridge_Cart_API();
             $cart_api->register_routes();
@@ -253,5 +261,44 @@ class RESTBridge_Plugin {
         if ($wc->cart && method_exists($wc->cart, 'calculate_totals')) {
             $wc->cart->calculate_totals();
         }
+    }
+
+     /**
+     * Handle REST API authentication
+     *
+     * @param mixed $result
+     * @return mixed|WP_Error|true
+     */
+    public function handle_authentication($result) {
+
+        if (!empty($result)) {
+        return $result;
+    }
+
+    if (is_user_logged_in()) {
+        return true;
+    }
+
+    $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+
+    if (!preg_match('/Bearer\s+(\S+)/i', $auth, $m)) {
+        return $result;
+    }
+
+    $token = sanitize_text_field($m[1]);
+
+    $users = get_users([
+        'meta_key'   => '_api_token',
+        'meta_value' => $token,
+        'number'     => 1,
+        'count_total'=> false,
+    ]);
+
+    if (empty($users)) {
+        return new WP_Error('invalid_token', 'Invalid API token', ['status' => 401]);
+    }
+
+    wp_set_current_user($users[0]->ID);
+    return true;
     }
 }
