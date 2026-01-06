@@ -15,6 +15,8 @@ class RESTBridge_Store_API_Product_Detail {
         // Use rest_post_dispatch as primary method - this definitely fires for all REST API requests
         // This is the most reliable hook that works for Store API
         add_filter('rest_post_dispatch', [$this, 'modify_store_api_response'], 999, 3);
+
+        add_filter('woocommerce_store_api_get_product_registry_data',[$this, 'inject_variations_into_store_api_product'],10,2);
         
         // Also try rest_prepare_product_object as backup (in case it fires for Store API)
         // Note: Store API might not use this hook, but it's worth trying
@@ -2480,6 +2482,49 @@ class RESTBridge_Store_API_Product_Detail {
             return __('Inclusive of all taxes', 'headlessplugin');
         }
         return '';
+    }
+
+    public function inject_variations_into_store_api_product( $product_data, $product ) {
+
+        // Safety check
+        if ( ! $product || ! $product->is_type( 'variable' ) ) {
+            return $product_data;
+        }
+
+        $variations = [];
+
+        foreach ( $product->get_children() as $variation_id ) {
+            $variation = wc_get_product( $variation_id );
+
+            // Respect Store API rules
+            if (
+                ! $variation ||
+                ! $variation->exists() ||
+                ! $variation->is_purchasable()
+            ) {
+                continue;
+            }
+
+            $variations[] = [
+                'id'            => $variation->get_id(),
+                'parent_id'     => $product->get_id(),
+                'sku'           => $variation->get_sku(),
+                'price'         => $variation->get_price(),
+                'regular_price' => $variation->get_regular_price(),
+                'sale_price'    => $variation->get_sale_price(),
+                'stock_status'  => $variation->get_stock_status(),
+                'in_stock'      => $variation->is_in_stock(),
+                'attributes'    => $variation->get_variation_attributes(),
+                'image'         => wp_get_attachment_url( $variation->get_image_id() ),
+            ];
+        }
+
+        // Attach to Store API response
+        $product_data['variations']     = $variations;
+        $product_data['variation_ids']  = wp_list_pluck( $variations, 'id' );
+        $product_data['has_variations'] = ! empty( $variations );
+
+        return $product_data;
     }
 
     /**

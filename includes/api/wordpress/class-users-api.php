@@ -169,52 +169,63 @@ class RESTBridge_Users_API {
      * LOGIN
      * =============================== */
 
-   public function simple_login(WP_REST_Request $request) {
+    public function simple_login(WP_REST_Request $request) {
 
         $p = $request->get_json_params();
 
         if (empty($p['username']) || empty($p['password'])) {
-            return new WP_Error('missing', 'Username & password required', ['status' => 400]);
+            return new WP_Error(
+                'missing',
+                'Username & password required',
+                ['status' => 400]
+            );
         }
 
-        $user = wp_signon([
-            'user_login'    => sanitize_text_field($p['username']),
-            'user_password' => $p['password'],
-        ], is_ssl());
+        if (!function_exists('wp_authenticate')) {
+            require_once ABSPATH . 'wp-includes/pluggable.php';
+        }
+
+        // Authenticate user
+        $user = wp_authenticate(
+            sanitize_text_field($p['username']),
+            $p['password']
+        );
 
         if (is_wp_error($user)) {
-            return new WP_Error('invalid', 'Invalid credentials', ['status' => 401]);
+            return new WP_Error(
+                'invalid',
+                'Invalid credentials',
+                ['status' => 401]
+            );
         }
 
-        // 🔹 Set WP session
+        // Required for WooCommerce cart/session
         wp_set_current_user($user->ID);
         wp_set_auth_cookie($user->ID, true);
 
-        $device = sanitize_text_field($p['device'] ?? 'web');
+        // SAME JWT LOGIC AS generate_user_token()
+        $jwt = new SimpleJWT(
+            defined('MY_JWT_SECRET') ? MY_JWT_SECRET : 'fallback-secret'
+        );
 
-        // 🔹 Handle tokens
-        $tokens = get_user_meta($user->ID, '_api_tokens', true);
-        $tokens = $this->normalize_tokens($tokens);
-
-        // Remove old token for same device
-        $tokens = array_filter($tokens, fn($t) => ($t['device'] ?? '') !== $device);
-
-        // Generate ONE plain token
-        $token = bin2hex(random_bytes(32));
-
-        $tokens[] = [
-            'token'    => $token,
-            'device'   => $device,
-            'provider' => 'password',
-            'created'  => time(),
+        $payload = [
+            'user_id'    => $user->ID,
+            'user_login' => $user->user_login,
+            'user_email' => $user->user_email,
+            'exp'        => time() + (24 * 3600), // 24 hours
+            'iat'        => time(),
         ];
 
-        update_user_meta($user->ID, '_api_tokens', array_values($tokens));
+        $token = $jwt->encode($payload);
 
+        // SAME META KEY (single source of truth)
+        update_user_meta($user->ID, '_api_token', $token);
+
+        // KEEP RESPONSE FORMAT AS REQUESTED
         return rest_ensure_response([
             'success' => true,
-            'token'   => $token,
             'type'    => 'Bearer',
+            'token'   => $token,
             'user'    => $this->format_user($user),
         ]);
     }
@@ -223,10 +234,11 @@ class RESTBridge_Users_API {
      * LOGOUT
      * =============================== */
 
-   public function simple_logout(WP_REST_Request $request) {
+    public function simple_logout(WP_REST_Request $request) {
 
-        // 🔹 Extract Bearer token
+        // 🔹 Just ensure token is present
         $token = $this->extract_bearer_token($request);
+
         if (!$token) {
             return new WP_Error(
                 'missing_token',
@@ -235,28 +247,17 @@ class RESTBridge_Users_API {
             );
         }
 
-        // 🔹 Resolve user from token
-        $user_id = $this->get_user_from_token($request);
-        if (!$user_id) {
-            return new WP_Error(
-                'invalid_token',
-                'Invalid token',
-                ['status' => 401]
-            );
+        // 🔹 Get currently authenticated user
+        $user_id = get_current_user_id();
+
+        if ($user_id) {
+            // 🔥 Remove stored JWT
+            delete_user_meta($user_id, '_api_token');
         }
 
-        // 🔹 Load & normalize tokens
-        $tokens = get_user_meta($user_id, '_api_tokens', true);
-        $tokens = $this->normalize_tokens($tokens);
-
-        // 🔹 Remove ONLY this token
-        $tokens = array_values(array_filter($tokens, function ($t) use ($token) {
-            return isset($t['token']) && $t['token'] !== $token;
-        }));
-
-        update_user_meta($user_id, '_api_tokens', $tokens);
-
-        // 🔹 Logout WP session (cookies)
+        // 🔹 Clear WordPress session
+        wp_set_current_user(0);
+        wp_clear_auth_cookie();
         wp_logout();
 
         return rest_ensure_response([

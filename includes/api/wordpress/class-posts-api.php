@@ -194,7 +194,7 @@ class RESTBridge_Posts_API {
         $response['popular_tags']  = $this->get_popular_tags( $popular_tags_count );
         $response['popular_posts'] = $this->get_popular_posts( $popular_posts_count );
 
-        $response['post_offer'] = $this->get_post_offer( $post_id );
+        $response['offer'] = $this->get_post_offer( $post_id );
 
         // Extension hook
         $response = apply_filters(
@@ -326,37 +326,74 @@ class RESTBridge_Posts_API {
     /**
      * Get post comments
      */
-    private function get_post_comments($post_id) {
+   private function get_post_comments($post_id) {
+
         $args = [
-            'post_id' => $post_id,
-            'status' => 'approve',
-            'hierarchical' => 'threaded',
+            'post_id' => (int) $post_id,
+            'status'  => 'approve',
+            'parent'  => 0, // 🔥 only main comments
+            'orderby' => 'comment_date',
+            'order'   => 'DESC',
         ];
 
         $comments = get_comments($args);
-        $formatted_comments = [];
+
+        $formatted = [];
 
         foreach ($comments as $comment) {
-            $formatted_comments[] = $this->format_comment($comment);
+            $data = $this->format_comment($comment);
+            $data['children'] = $this->get_child_comments($comment->comment_ID);
+            $formatted[] = $data;
         }
 
-        return $formatted_comments;
+        return $formatted;
+    }
+
+    private function get_child_comments($parent_id) {
+
+        $children = get_comments([
+            'parent'  => (int) $parent_id,
+            'status'  => 'approve',
+            'orderby' => 'comment_date',
+            'order'   => 'ASC',
+        ]);
+
+        $formatted = [];
+
+        foreach ($children as $child) {
+            $data = $this->format_comment($child);
+            $data['children'] = $this->get_child_comments($child->comment_ID);
+            $formatted[] = $data;
+        }
+
+        return $formatted;
     }
 
     /**
      * Format comment data
      */
     private function format_comment($comment) {
+
+        // Get comment content as plain text (no HTML)
+        $content = wp_strip_all_tags( get_comment_text( $comment ) );
+
+        $avatar_url = get_avatar_url(
+            $comment->comment_author_email,
+            ['size' => 96]
+        );
+
         return [
-            'id' => $comment->comment_ID,
-            'author' => $comment->comment_author,
-            'email' => $comment->comment_author_email,
-            'url' => $comment->comment_author_url,
-            'date' => $comment->comment_date,
-            'content' => $comment->comment_content,
-            'approved' => $comment->comment_approved,
-            'user_id' => (int) $comment->user_id,
-            'avatar' => get_avatar_url($comment->comment_author_email),
+            'id'           => (int) $comment->comment_ID,
+            'post_id'      => (int) $comment->comment_post_ID,
+            'author'       => $comment->comment_author,
+            'author_email' => $comment->comment_author_email,
+            'author_url'   => $comment->comment_author_url,
+            'avatar'       => $avatar_url,
+            'content'      => trim($content),
+            'date'         => $comment->comment_date,
+            'approved'     => (int) $comment->comment_approved,
+            'parent'       => (int) $comment->comment_parent,
+            'type'         => $comment->comment_type,
         ];
     }
 
@@ -498,33 +535,31 @@ class RESTBridge_Posts_API {
      * - offer_link
      * Returns null when no offer is configured.
      */
-   private function get_post_offer( int $post_id ) {
-
-        // Safety: only for blog posts
-        if ( get_post_type( $post_id ) !== 'post' ) {
+    private function get_post_offer($post_id) {
+        // Get the first offer term
+        $terms = get_terms([
+            'taxonomy' => 'offer',
+            'hide_empty' => false,
+            'number' => 1
+        ]);
+        if (empty($terms) || is_wp_error($terms)) {
             return null;
         }
-
-        // Blog Offer disabled in Customizer
-        if ( ! get_theme_mod( 'styluza_blog_offer_show', false ) ) {
-            return null;
-        }
-
-        $title      = get_theme_mod( 'styluza_blog_offer_title', '' );
-        $percentage = (int) get_theme_mod( 'styluza_blog_offer_percentage', 0 );
-        $image      = get_theme_mod( 'styluza_blog_offer_image' );
-
-        // Nothing meaningful to show
-        if ( empty( $title ) && $percentage <= 0 ) {
-            return null;
-        }
+        $offer = $terms[0];
+        $img      = get_term_meta($offer->term_id, 'offer_image', true);
+        $heading  = get_term_meta($offer->term_id, 'offer_heading', true);
+        $bigtext  = get_term_meta($offer->term_id, 'offer_big_text', true);
+        $btn_text = get_term_meta($offer->term_id, 'offer_btn_text', true);
+        $btn_url  = get_term_meta($offer->term_id, 'offer_btn_url', true);
 
         return [
-            'type'       => 'blog',
-            'enabled'    => true,
-            'title'      => $title,
-            'percentage' => $percentage,
-            'image'      => $image,
+            'image' => $img ?: null,
+            'heading' => $heading ?: null,
+            'big_text' => $bigtext ?: null,
+            'button_text' => $btn_text ?: null,
+            'button_url' => $btn_url ?: null,
+            'term_id' => $offer->term_id,
+            'term_name' => $offer->name,
         ];
     }
 

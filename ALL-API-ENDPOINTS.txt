@@ -2467,6 +2467,10 @@ Examples:
 Search for "test":
 GET http://localhost/wordpress/wp-json/restbridge/v1/search?s=test
 
+GET http://localhost/wordpress/wp-json/restbridge/v1/search/post?s=keyword
+
+GET http://localhost/wordpress/wp-json/restbridge/v1/search/product?s=shirt
+
 Search for "blog" with 10 results per page:
 GET http://localhost/wordpress/wp-json/restbridge/v1/search?s=blog&per_page=10
 

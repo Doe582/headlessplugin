@@ -44,10 +44,12 @@ class RESTBridge_Shipping_Address_API {
     public function check_permission($request) {
         $auth = $request->get_header('authorization');
 
+        // 👤 GUEST USER → ALLOW
         if (!$auth || stripos($auth, 'Bearer ') !== 0) {
-            return false;
+            return true;
         }
 
+        // 🔐 JWT PROVIDED → VALIDATE
         try {
             $token = trim(str_ireplace('Bearer', '', $auth));
             $jwt   = new SimpleJWT(MY_JWT_SECRET);
@@ -65,6 +67,7 @@ class RESTBridge_Shipping_Address_API {
             return false;
         }
     }
+
 
     /* -------------------------
      * Get addresses
