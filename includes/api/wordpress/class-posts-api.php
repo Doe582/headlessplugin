@@ -75,22 +75,41 @@ class RESTBridge_Posts_API {
 
     public function get_posts(WP_REST_Request $request) {
         $params = $request->get_query_params();
-        
+
         $args = [
-            'post_type' => 'post',
-            'post_status' => isset($params['status']) ? sanitize_text_field($params['status']) : 'publish',
-            'posts_per_page' => isset($params['per_page']) ? (int) $params['per_page'] : 10,
-            'paged' => isset($params['page']) ? (int) $params['page'] : 1,
-            'orderby' => isset($params['orderby']) ? sanitize_text_field($params['orderby']) : 'date',
-            'order' => isset($params['order']) ? sanitize_text_field($params['order']) : 'DESC',
+            'post_type'      => 'post',
+            'post_status'    => 'publish',
+            'posts_per_page' => (int) ($params['per_page'] ?? 10),
+            'paged'          => (int) ($params['page'] ?? 1),
+            'orderby'        => $params['orderby'] ?? 'date',
+            'order'          => $params['order'] ?? 'DESC',
+            'tax_query'      => [],
         ];
 
-        if (isset($params['search'])) {
+        if (!empty($params['search'])) {
             $args['s'] = sanitize_text_field($params['search']);
         }
 
-        if (isset($params['category'])) {
-            $args['cat'] = (int) $params['category'];
+        if (!empty($params['tag'])) {
+            $args['tax_query'][] = [
+                'taxonomy' => 'post_tag',
+                'field'    => 'slug',
+                'terms'    => sanitize_title($params['tag']),
+            ];
+        }
+
+        if (!empty($params['category'])) {
+            $args['tax_query'][] = [
+                'taxonomy' => 'category',
+                'field'    => 'slug',
+                'terms'    => sanitize_title($params['category']),
+            ];
+        }
+
+        if (!empty($args['tax_query'])) {
+            $args['tax_query']['relation'] = 'AND';
+        } else {
+            unset($args['tax_query']);
         }
 
         $query = new WP_Query($args);
@@ -282,24 +301,27 @@ class RESTBridge_Posts_API {
             'author' => $post->post_author,
             'slug' => $post->post_name,
             'permalink' => get_permalink($post->ID),
-            'categories' => wp_get_post_categories($post->ID),
-            'tags' => (function($post_id) {
-                $terms = wp_get_post_tags($post_id);
-                $out = [];
-                if (!empty($terms) && !is_wp_error($terms)) {
-                    foreach ($terms as $t) {
-                        $out[] = [
-                            'id' => (int) $t->term_id,
-                            'name' => $t->name,
-                            'slug' => $t->slug,
-                        ];
-                    }
-                }
-                return $out;
-            })($post->ID),
+            'categories' => $this->format_terms($post->ID, 'category'),
+            'tags'       => $this->format_terms($post->ID, 'post_tag'),
             'featured_image' => get_the_post_thumbnail_url($post->ID, 'full'),
             'meta' => get_post_meta($post->ID),
         ];
+    }
+
+    private function format_terms(int $post_id, string $taxonomy): array {
+        $terms = get_the_terms($post_id, $taxonomy);
+
+        if (empty($terms) || is_wp_error($terms)) {
+            return [];
+        }
+
+        return array_map(function ($term) {
+            return [
+                'id'   => (int) $term->term_id,
+                'name' => $term->name,
+                'slug' => $term->slug,
+            ];
+        }, $terms);
     }
 
     /**
@@ -487,32 +509,36 @@ class RESTBridge_Posts_API {
      * Get popular posts (by comment count)
      */
     private function get_popular_posts($count = 5) {
-        $args = [
-            'post_type' => 'post',
-            'post_status' => 'publish',
-            'posts_per_page' => (int) $count,
-            'orderby' => 'comment_count',
-            'order' => 'DESC',
-        ];
-
-        $query = new WP_Query($args);
-        $popular = [];
-        while ($query->have_posts()) {
-            $query->the_post();
-            $p = get_post();
-            $popular[] = [
-                'id' => $p->ID,
-                'title' => get_the_title($p->ID),
-                'excerpt' => get_the_excerpt($p->ID),
-                'permalink' => get_permalink($p->ID),
-                'featured_image' => get_the_post_thumbnail_url($p->ID, 'thumbnail'),
-                'comment_count' => (int) $p->comment_count,
-                'date' => $p->post_date,
+            $args = [
+                'post_type'      => 'post',
+                'post_status'    => 'publish',
+                'posts_per_page' => (int) $count,
+                'orderby'        => 'comment_count',
+                'order'          => 'DESC',
             ];
-        }
-        wp_reset_postdata();
 
-        return $popular;
+            $query = new WP_Query($args);
+            $popular = [];
+
+            while ($query->have_posts()) {
+                $query->the_post();
+                $p = get_post();
+
+                $popular[] = [
+                    'id'             => $p->ID,
+                    'title'          => get_the_title($p->ID),
+                    'slug'           => $p->post_name, // ✅ slug added
+                    'excerpt'        => get_the_excerpt($p->ID),
+                    'permalink'      => get_permalink($p->ID),
+                    'featured_image' => get_the_post_thumbnail_url($p->ID, 'thumbnail'),
+                    'comment_count'  => (int) $p->comment_count,
+                    'date'           => $p->post_date,
+                ];
+            }
+
+            wp_reset_postdata();
+
+            return $popular;
     }
 
     /**

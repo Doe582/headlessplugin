@@ -349,7 +349,8 @@ class RESTBridge_Header_API {
         // Extract menu links (clean format) - fallback if no primary menu resolved
         if (empty($results['menu']) && preg_match_all('/<a[^>]+href="([^"]+)"[^>]*>(.*?)<\/a>/is', $rendered_html, $matches, PREG_SET_ORDER)) {
             foreach ($matches as $a) {
-                $title = trim(wp_strip_all_tags($a[2], true));
+                $title_raw = $a[2] ?? '';
+                $title = trim(wp_strip_all_tags((string) $title_raw, true));
                 // Skip empty titles (icons) and duplicates
                 if ($title && !empty($title)) {
                     $url = $a[1];
@@ -727,7 +728,7 @@ class RESTBridge_Header_API {
             $key = null;
             if ($icon_url) {
                 $url_path = parse_url($icon_url, PHP_URL_PATH);
-                $url_path = trim($url_path, '/');
+                $url_path = is_string($url_path) ? trim($url_path, '/') : '';
                 if ($url_path) {
                     // Use last segment of URL path as identifier
                     $path_parts = explode('/', $url_path);

@@ -38,6 +38,7 @@ class RESTBridge_Plugin {
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-products-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-checkout-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-cart-api.php';
+        require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-razorpay-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-coupons-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-customers-api.php';
         require_once plugin_dir_path(__FILE__) . '../api/woocommerce/class-my-account-api.php';
@@ -154,6 +155,9 @@ class RESTBridge_Plugin {
 
             $cart_api = new RESTBridge_Cart_API();
             $cart_api->register_routes();
+
+            $razorpay_api = new RESTBridge_Razorpay_API();
+	        $razorpay_api->register_routes();
 
             $coupons_api = new RESTBridge_Coupons_API();
             $coupons_api->register_routes();

@@ -2599,23 +2599,3 @@ function wc_store_custom_product_meta_schema() {
         ],
     ];
 }
-
-
-add_action('rest_api_init', function () {
-
-    // Handle OPTIONS preflight
-    if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-        header('Access-Control-Allow-Origin: http://localhost:3000');
-        header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-        header('Access-Control-Allow-Headers: Content-Type, Cart-Token');
-        header('Access-Control-Allow-Credentials: true');
-        status_header(200);
-        exit;
-    }
-});
-
-add_filter('rest_pre_serve_request', function ($value) {
-    header('Access-Control-Allow-Origin: http://localhost:3000');
-    header('Access-Control-Allow-Credentials: true');
-    return $value;
-});

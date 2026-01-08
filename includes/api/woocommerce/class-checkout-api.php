@@ -106,7 +106,7 @@ class RESTBridge_Shipping_Address_API {
     /* -------------------------
      * Update address
      * ------------------------- */
-    public function update_address(WP_REST_Request $request) {
+   public function update_address(WP_REST_Request $request) {
 
         $user_id   = get_current_user_id();
         $addresses = get_user_meta($user_id, self::META_KEY, true) ?: [];
@@ -118,7 +118,7 @@ class RESTBridge_Shipping_Address_API {
                 $updated = $this->sanitize_address($request);
                 $updated['id'] = $id;
 
-                if ($updated['is_default']) {
+                if (!empty($updated['is_default'])) {
                     foreach ($addresses as &$a) {
                         $a['is_default'] = false;
                     }
@@ -127,12 +127,16 @@ class RESTBridge_Shipping_Address_API {
                 $addr = array_merge($addr, $updated);
                 update_user_meta($user_id, self::META_KEY, $addresses);
 
-                return $addr;
+                return rest_ensure_response([
+                    'success' => true,
+                    'address' => $addr,
+                ]);
             }
         }
 
         return new WP_Error('not_found', 'Address not found', ['status' => 404]);
     }
+
 
     /* -------------------------
      * Delete address
